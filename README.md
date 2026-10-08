@@ -524,12 +524,18 @@ The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`)
 - [x] **Unused imports removed** — `crisp.py` is pure NumPy; scikit-learn is no longer a runtime dependency
 - [x] **Non-compositional NaN left untouched**
 - [x] **All-NaN slices handled without RuntimeWarnings**
+- [x] **Figures generated from the result tables** — Fig. 3's SumDev panel and Fig. 5 were hard-coded literals; both now read from the CSVs, Fig. 3's x labels are derived from the data (they previously rendered as `n=1 d=_MCAR_10`), and Fig. 4 plots the mean profile for contrast
+- [x] **`lcrisp` vectorised** — the triply nested Python loop is gone: 10.6 s → 0.10 s at n = 1030 (≈110×), with output bit-identical to the old implementation to 1.4e-14 (`verify_lcrisp_vectorization.py`)
+- [x] **`residual_backfill` no longer rescales observed cells** — it broke the exact single-missing recovery for baselines that do not preserve observed values. Verified to change nothing for CRISP/MICE/KNN/mean
+- [x] **Entirely-missing columns guarded** — `KNNImputer`/`SimpleImputer` silently drop them, which misaligned every downstream MAE
 
 **Open**
 
-- [ ] **`make_figures.py` does not regenerate from `HONEST_results.csv`.** Figure 3's SumDev panel and Figure 5 are hard-coded literals (`make_figures.py` around lines 59 and 98) rather than read from the result CSVs, and they still carry v1.0 numbers. Figures must be regenerated from the tables before any submission.
-- [ ] **`lcrisp` is O(n²·d) in a Python loop.** Benchmarking it on the large datasets (n = 1030) dominates the honest re-run's runtime. Vectorise it (or use a spatial index) before recommending it for large pools.
+- [ ] **`auto_crisp`'s routing rule is wrong.** It switches on the missing *rate* (`threshold=0.15`), so on every low-missingness dataset in the benchmark it reproduces `crisp` exactly — even where `lcrisp` is 1.9–2.4× better (steel, cement). Every `AutoCRISP` row in `HONEST_results.csv` is bit-identical to its `CRISP` row. The rule should key on the profile's support (usable rows / neighbour availability), not on the missing rate.
 - [ ] **The real high-ratio subsets reach d/n = 1.50–1.75, not the d/n > 2 of the synthetic pools.** A genuinely high-dimensional *real* compositional dataset with `n < d` could not be obtained, so the strongest `n < d` claim still rests on synthetic data.
+- [ ] **`lcrisp` is still O(n²·d) asymptotically.** The inner loops are vectorised, but it forms an `n × d` distance row per sample. A spatial index (or a capped neighbourhood) would be needed for pools beyond a few thousand rows.
+- [ ] **The manuscript's §3 has not been rewritten.** The numbers in `paper_draft.md` are still v1.0; see the Manuscript status table above for the claim-by-claim gap.
+- [ ] **The downstream experiment is one configuration deep.** `downstream_eval.py` uses one surrogate (gradient boosting), one missing rate (20 %) and 5 seeds; the ranking across imputers should be checked against a second model family.
 - [ ] One missing draw per subset in `tmp_realnd/` / `tmp_realhr/`; the subset is the resampling unit, so a paired test over subsets resamples overlapping rows.
 - [ ] No packaged release on PyPI — `pip install crisp-imputer` does not work yet.
 
