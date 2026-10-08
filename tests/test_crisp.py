@@ -15,6 +15,8 @@ benchmarks depend on (see `HONEST_CRISP_2026-10-08.md`).
 
 Run:  pytest -q
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -214,15 +216,8 @@ def test_fit_then_transform_equals_fit_transform():
     np.testing.assert_allclose(a, b, atol=1e-12)
 
 
-@pytest.mark.filterwarnings("ignore::RuntimeWarning")  # see note below
 def test_fitted_profile_is_reused_across_transform_calls():
-    """A fitted imputer must not silently re-fit on new data.
-
-    `_column_mean_init` calls `np.nanmean` on every column; here the transform set
-    happens to have an all-NaN column, so NumPy emits a "Mean of empty slice"
-    RuntimeWarning. The result is still correct (the column is fully missing, so the
-    allocation overwrites it) — recorded in README "Known issues".
-    """
+    """A fitted imputer must not silently re-fit on new data."""
     train = np.array([[50.0, 30.0, 20.0], [45.0, 35.0, 20.0], [55.0, 25.0, 20.0]])
     test = np.array([[np.nan, 40.0, 20.0], [np.nan, 30.0, 30.0]])
     imp = CRISPImputer(comp_idx=[0, 1, 2], total=TOTAL).fit(train)
@@ -376,7 +371,6 @@ def test_no_missing_input_is_returned_unchanged():
     np.testing.assert_array_equal(crisp(X, comp_idx=[0, 1, 2], total=TOTAL), X)
 
 
-@pytest.mark.filterwarnings("ignore::RuntimeWarning")  # all-NaN column -> NaN-slice warnings
 def test_single_row_input():
     X = np.array([[np.nan, 40.0, 20.0]])
     out = crisp(X, comp_idx=[0, 1, 2], total=TOTAL)
@@ -421,7 +415,6 @@ def test_custom_total():
     assert out[3, 0] == pytest.approx(0.4, abs=1e-9)
 
 
-@pytest.mark.filterwarnings("ignore::RuntimeWarning")  # all-NaN column -> NaN-slice warnings
 def test_entirely_missing_column_does_not_crash():
     X = np.array([
         [np.nan, 30.0, 20.0, 10.0],
@@ -490,12 +483,12 @@ def test_nearly_complete_rows_contribute_to_the_profile():
     assert not np.allclose(imp.global_profile_, profile_complete_only, atol=1e-12)
 
 
-def test_nan_in_a_non_compositional_column_is_filled_with_the_column_mean():
-    """Current behaviour: `_column_mean_init` fills NaN in *every* column, including
-    columns outside `comp_idx`. Compositional columns are then overwritten by the
-    allocation, but a non-compositional NaN silently becomes a column mean.
+def test_nan_in_a_non_compositional_column_is_left_untouched():
+    """CRISP imputes the composition only.
 
-    Recorded here (and in README "Known issues") rather than asserted as desirable.
+    Columns outside `comp_idx` are not part of the composition, so a NaN there must be
+    preserved rather than silently replaced by a column mean. (Behaviour changed in
+    1.1.0; see README "Known issues".)
     """
     X = np.array([
         [40.0, 30.0, 30.0, 10.0],
@@ -503,4 +496,34 @@ def test_nan_in_a_non_compositional_column_is_filled_with_the_column_mean():
         [45.0, 30.0, 25.0, np.nan],
     ])
     out = crisp(X, comp_idx=[0, 1, 2], total=TOTAL)
-    assert out[2, 3] == pytest.approx(np.mean([10.0, 20.0]))
+    assert np.isnan(out[2, 3])
+    # present values in the non-compositional column are unchanged
+    np.testing.assert_allclose(out[:2, 3], [10.0, 20.0], atol=1e-12)
+    # the compositional part still closes
+    np.testing.assert_allclose(out[:, :3].sum(axis=1), TOTAL, atol=1e-9)
+
+
+@pytest.mark.parametrize("case", ["all_nan_column", "single_row", "transform_all_nan_column"])
+def test_degenerate_inputs_emit_no_runtime_warnings(case):
+    """Degenerate all-NaN slices must be handled explicitly, not left to NumPy's
+    "Mean of empty slice" / "All-NaN slice encountered" warnings."""
+    all_nan_col = np.array([
+        [np.nan, 30.0, 20.0, 10.0],
+        [np.nan, 25.0, 25.0, 10.0],
+        [np.nan, 35.0, 15.0, 10.0],
+        [np.nan, 30.0, 20.0, 10.0],
+    ])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        if case == "all_nan_column":
+            crisp(all_nan_col, comp_idx=[0, 1, 2, 3], total=TOTAL)
+        elif case == "single_row":
+            crisp(np.array([[np.nan, 40.0, 20.0]]), comp_idx=[0, 1, 2], total=TOTAL)
+        else:
+            imp = CRISPImputer(comp_idx=[0, 1, 2], total=TOTAL).fit(
+                np.array([[50.0, 30.0, 20.0], [45.0, 35.0, 20.0], [55.0, 25.0, 20.0]])
+            )
+            imp.transform(np.array([[np.nan, 40.0, 20.0], [np.nan, 30.0, 30.0]]))
+
+    runtime = [w for w in caught if issubclass(w.category, RuntimeWarning)]
+    assert runtime == [], f"unexpected RuntimeWarning(s): {[str(w.message) for w in runtime]}"

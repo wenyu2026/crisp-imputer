@@ -6,6 +6,10 @@
 tmp_nd/**/*.tmp
 tmp_realnd/**/*.tmp
 
+# ===== R 多种子的暂存区（1199 个小文件）=====
+# 完全由 stage_r_multiseed.py 确定性重建（固定 seed），秒级完成，故不入库。
+tmp_rms/
+
 # ===== Python =====
 __pycache__/
 *.py[cod]

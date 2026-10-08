@@ -1,16 +1,16 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name="crisp-imputer",
-    version="1.0.0",
+    version="1.1.0",
     description="CRISP: Compositional Ratio-based Imputation with Simplex Projection",
     author="wenyu2026",
     url="https://github.com/wenyu2026/crisp-imputer",
     py_modules=["crisp"],
+    # The library itself is pure NumPy: no pandas, no scikit-learn.
+    # (The benchmark scripts in the repository do need them — see requirements.txt.)
     install_requires=[
         "numpy>=1.20.0",
-        "pandas>=1.3.0",
-        "scikit-learn>=1.0.0",
     ],
     python_requires=">=3.8",
     classifiers=[

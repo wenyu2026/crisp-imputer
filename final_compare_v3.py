@@ -29,23 +29,67 @@ def impute_mice(Xm):
     return IterativeImputer(max_iter=20, random_state=0).fit_transform(Xm)
 
 
-def soft_impute(Xm, rank=5, max_iter=100, tol=1e-5):
-    """简化 SoftImpute（proximal gradient + SVD 低秩补全）。"""
-    X = Xm.copy().astype(float)
-    for j in range(X.shape[1]):
-        med = np.nanmedian(X[:, j])
-        X[np.isnan(X[:, j]), j] = med if not np.isnan(med) else 0.0
-    mask = ~np.isnan(Xm)
+def soft_impute(Xm, lam_ratio=0.05, max_iter=100, tol=1e-6, center=True):
+    """SoftImpute for low-rank matrix completion (Mazumder, Hastie & Tibshirani 2010).
+
+    Solves
+
+        min_M  0.5 * ||P_Omega(X - M)||_F^2  +  lam * ||M||_*
+
+    by proximal gradient: fill the unobserved entries with the current estimate, take
+    the SVD, then apply **soft thresholding** ``s <- max(s - lam, 0)`` to the singular
+    values (the proximal operator of the nuclear norm). This is the defining step of
+    SoftImpute; a hard rank truncation is a different algorithm.
+
+    `center=True` subtracts the observed column means first and adds them back at the
+    end, as recommended in the paper for data whose columns have very different scales.
+
+    Parameters
+    ----------
+    lam_ratio : float
+        Regularisation strength as a fraction of the largest singular value of the
+        centred, zero-filled matrix. ``lam_ratio=0`` reduces to hard rank truncation.
+        The relative form avoids hand-tuning a scale that depends on dataset units.
+    """
+    X = np.asarray(Xm, dtype=float)
+    mask = ~np.isnan(X)
+
+    if center:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            col_mean = np.nanmean(np.where(mask, X, np.nan), axis=0)
+        col_mean = np.where(np.isnan(col_mean), 0.0, col_mean)
+    else:
+        col_mean = np.zeros(X.shape[1])
+
+    Z = np.where(mask, X - col_mean, 0.0)          # centred observations, zeros elsewhere
+
+    s0 = np.linalg.svd(Z, compute_uv=False)
+    smax = float(s0[0]) if s0.size else 0.0
+    lam = float(lam_ratio) * smax
+
+    M = np.zeros_like(Z)
     for _ in range(max_iter):
-        U, s, Vt = np.linalg.svd(X, full_matrices=False)
-        r = min(rank, len(s))
-        X_new = U[:, :r] @ np.diag(s[:r]) @ Vt[:r, :]
-        X_new[mask] = Xm[mask]  # 恢复观测
-        if np.linalg.norm(X_new - X) < tol:
-            X = X_new
+        A = np.where(mask, Z, M)                   # observed entries fixed, rest = estimate
+        U, s, Vt = np.linalg.svd(A, full_matrices=False)
+        s_thr = np.maximum(s - lam, 0.0)           # soft threshold (nuclear-norm prox)
+        M_new = (U * s_thr) @ Vt
+        denom = max(np.linalg.norm(M), 1e-12)
+        if np.linalg.norm(M_new - M) <= tol * denom:
+            M = M_new
             break
-        X = X_new
-    return X
+        M = M_new
+
+    return M + col_mean
+
+
+def soft_impute_lambda_sweep(Xm, ratios=(0.0, 0.005, 0.02, 0.05, 0.15, 0.5), **kw):
+    """Run SoftImpute over a grid of `lam_ratio` values.
+
+    Returns {ratio: imputed_matrix}. Used to check that the reported SoftImpute
+    behaviour is not an artefact of one arbitrary regularisation choice.
+    """
+    return {float(r): soft_impute(Xm, lam_ratio=r, **kw) for r in ratios}
 
 
 def gen_synthetic():

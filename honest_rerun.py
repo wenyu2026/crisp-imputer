@@ -25,9 +25,10 @@ sys.path.insert(0, BASE)
 
 from benchmark_zeros import make_missing, impute_crisp, impute_knn_direct, impute_mean  # noqa
 from final_compare_v3 import impute_mice, soft_impute  # noqa
+from crisp import lcrisp, auto_crisp  # noqa
 
 N_SEED = 20
-PY = ["CRISP", "MICE", "KNN", "mean", "SoftImpute"]
+PY = ["CRISP", "MICE", "KNN", "mean", "SoftImpute", "LCRISP", "AutoCRISP"]
 VARIANTS = ["raw", "+closure", "+backfill"]
 
 
@@ -41,8 +42,15 @@ def closure_project(Xp):
 
 
 def residual_backfill(Xp, Xm):
-    """单缺失行：x_miss = 100 - Σ已知（用闭合约束精确解出）；其余行只做归一化。"""
+    """单缺失行：x_miss = 100 - Σ已知（用闭合约束精确解出）；其余行只做归一化。
+
+    关键：观测格一律取**真实观测值**。部分基线（如中心化 + 软阈值的 SoftImpute）
+    输出的观测格并非原值，若直接对其做闭包会把观测格一起缩放、破坏精确回填。
+    所有方法本来就能看到观测值，因此把观测格还原为真值不构成额外信息。
+    """
     Y = np.maximum(np.asarray(Xp, dtype=float), 0.0).copy()
+    obs = ~np.isnan(Xm)
+    Y[obs] = Xm[obs]
     n_miss = np.isnan(Xm).sum(axis=1)
     known_sum = np.nansum(Xm, axis=1)
     for i in np.where(n_miss == 1)[0]:
@@ -63,7 +71,15 @@ def run_one(X, miss):
     Xm[miss] = np.nan
     preds = {"CRISP": impute_crisp(Xm), "MICE": impute_mice(Xm),
              "KNN": impute_knn_direct(Xm), "mean": impute_mean(Xm),
-             "SoftImpute": soft_impute(Xm)}
+             "SoftImpute": soft_impute(Xm),
+             "LCRISP": lcrisp(Xm, comp_idx=list(range(Xm.shape[1])), total=100.0),
+             "AutoCRISP": auto_crisp(Xm, comp_idx=list(range(Xm.shape[1])), total=100.0)}
+    # 形状守卫：sklearn 的 KNNImputer / SimpleImputer 会删除整列全缺失的列，
+    # 若发生则输出列数少于输入，按掩码取值会静默错位。宁可报错也不要静默算错。
+    for m, p in preds.items():
+        if np.asarray(p).shape != Xm.shape:
+            raise ValueError(f"{m} 返回形状 {np.asarray(p).shape}，期望 {Xm.shape}"
+                             "（该配置存在整列全缺失，属病态配置）")
     out = {m: variants_of(p, Xm) for m, p in preds.items()}
     n_miss = int(miss.sum())
     n_rows_miss = int(miss.any(axis=1).sum())
@@ -75,7 +91,7 @@ def eval_config(name, X, mech, rate, seeds=range(N_SEED)):
     """对单个配置跑多种子，返回明细行 + 配对检验原料。"""
     acc = {(m, v): [] for m in PY for v in VARIANTS}
     sd = {(m, v): [] for m in PY for v in VARIANTS}
-    n_miss_l, n_single_l, n_used = [], [], 0
+    n_miss_l, n_single_l, n_usable_l, n_used = [], [], [], 0
     for s in seeds:
         miss = make_missing(X, rate, mech, seed=s)
         if miss.sum() == 0:
@@ -84,6 +100,7 @@ def eval_config(name, X, mech, rate, seeds=range(N_SEED)):
         preds, n_miss, n_rows, n_single, Xm = run_one(X, miss)
         n_miss_l.append(n_miss)
         n_single_l.append(n_single)
+        n_usable_l.append(int((miss.sum(axis=1) <= 1).sum()))
         for m in PY:
             for v in VARIANTS:
                 Xp = preds[m][v]
@@ -105,8 +122,12 @@ def eval_config(name, X, mech, rate, seeds=range(N_SEED)):
                 "actual_missing_per_seed": round(float(np.mean(n_miss_l)), 2),
                 "actual_missing_pct": round(float(np.mean(n_miss_l)) / X.size * 100, 3),
                 "single_missing_rows_per_seed": round(float(np.mean(n_single_l)), 2),
+                "usable_rows_per_seed": round(float(np.mean(n_usable_l)), 2),
+                "pct_rows_usable": round(float(np.mean(n_usable_l)) / X.shape[0] * 100, 1),
                 "pct_missing_from_single_rows": round(float(np.mean(n_single_l)) /
                                                       max(float(np.mean(n_miss_l)), 1e-9) * 100, 1),
+                "n_rows": int(X.shape[0]), "n_cols": int(X.shape[1]),
+                "d_over_n": round(X.shape[1] / X.shape[0], 2),
             })
     # 配对检验：CRISP(raw) vs 各基线的 +closure / +backfill
     for m in PY:
@@ -123,6 +144,102 @@ def eval_config(name, X, mech, rate, seeds=range(N_SEED)):
                         "crisp_mae": round(a.mean(), 4), "other_mae": round(b.mean(), 4),
                         "winner": "CRISP" if a.mean() < b.mean() else m})
     return rows, wil, n_used
+
+
+def run_stored_subsets(root, tag):
+    """Aggregate pre-generated subset folders holding X_true.csv / X_missing.csv.
+
+    Used for `tmp_realnd/` (real n<d subsets, one missing draw each) and
+    `tmp_realhr/` (real high-ratio n<d subsets, 20 draws each). One result row per
+    (dataset-group, method, variant).
+    """
+    if not os.path.isdir(root):
+        print(f"[{tag}] {root} 不存在，跳过", flush=True)
+        return [], []
+
+    by_ds = {}
+    skipped_illposed = 0
+    for sub in sorted(os.listdir(root)):
+        p = os.path.join(root, sub)
+        if not os.path.isdir(p):
+            continue
+        ds = sub.rsplit("_s", 1)[0]
+        X = pd.read_csv(os.path.join(p, "X_true.csv")).values.astype(float)
+        Xm = pd.read_csv(os.path.join(p, "X_missing.csv")).values.astype(float)
+        miss = np.isnan(Xm)
+        if miss.sum() == 0:
+            continue
+        if miss.all(axis=0).any():
+            # 整列全缺失：sklearn 基线会删除该列，比较无法在同一索引上进行。
+            # 这类配置是病态的（该组分从未被观测），直接跳过并计数。
+            skipped_illposed += 1
+            continue
+
+        preds = {"CRISP": impute_crisp(Xm), "MICE": impute_mice(Xm),
+                 "KNN": impute_knn_direct(Xm), "mean": impute_mean(Xm),
+                 "SoftImpute": soft_impute(Xm),
+                 "LCRISP": lcrisp(Xm, comp_idx=list(range(Xm.shape[1])), total=100.0),
+                 "AutoCRISP": auto_crisp(Xm, comp_idx=list(range(Xm.shape[1])), total=100.0)}
+
+        n, d = X.shape
+        parts = ds.split("_")
+        mech = parts[-2] if len(parts) >= 3 else "observed"
+        rate = float(parts[-1]) / 100.0 if len(parts) >= 3 else np.nan
+        agg = by_ds.setdefault(ds, {
+            "mae": {m: {v: [] for v in VARIANTS} for m in PY},
+            "sd": {m: {v: [] for v in VARIANTS} for m in PY},
+            "nm": [], "ns": [], "nu": [], "n": n, "d": d, "mech": mech, "rate": rate})
+        agg["nm"].append(int(miss.sum()))
+        agg["ns"].append(int((miss.sum(axis=1) == 1).sum()))
+        agg["nu"].append(int((miss.sum(axis=1) <= 1).sum()))
+        for m in PY:
+            for v in VARIANTS:
+                Xp = variants_of(preds[m], Xm)[v]
+                agg["mae"][m][v].append(float(np.mean(np.abs(X[miss] - Xp[miss]))))
+                agg["sd"][m][v].append(float(np.mean(np.abs(Xp.sum(axis=1) - 100.0))))
+        print(f"[{tag}] {sub}: n={n} d={d} n_miss={int(miss.sum())}", flush=True)
+
+    rows, wil = [], []
+    for ds, agg in by_ds.items():
+        n, d = agg["n"], agg["d"]
+        mean_nm = float(np.mean(agg["nm"]))
+        mean_ns = float(np.mean(agg["ns"]))
+        mean_nu = float(np.mean(agg["nu"]))
+        for m in PY:
+            for v in VARIANTS:
+                a = np.array(agg["mae"][m][v])
+                rows.append({
+                    "config": f"{ds}|{tag}", "mechanism": agg["mech"],
+                    "nominal_rate": agg["rate"],
+                    "method": m, "variant": v,
+                    "mae_mean": round(a.mean(), 4), "mae_std": round(a.std(), 4),
+                    "sumdev_mean": round(float(np.mean(agg["sd"][m][v])), 4),
+                    "seeds_used": len(a),
+                    "actual_missing_per_seed": round(mean_nm, 2),
+                    "actual_missing_pct": round(mean_nm / (n * d) * 100, 3),
+                    "single_missing_rows_per_seed": round(mean_ns, 2),
+                    "usable_rows_per_seed": round(mean_nu, 2),
+                    "pct_rows_usable": round(mean_nu / n * 100, 1),
+                    "pct_missing_from_single_rows": round(mean_ns / max(mean_nm, 1e-9) * 100, 1),
+                    "n_rows": n, "n_cols": d, "d_over_n": round(d / n, 2),
+                })
+        for m in PY:
+            if m == "CRISP":
+                continue
+            for v in ["raw", "+closure", "+backfill"]:
+                a = np.array(agg["mae"]["CRISP"]["raw"])
+                b = np.array(agg["mae"][m][v])
+                try:
+                    p = float(wilcoxon(a, b).pvalue)
+                except ValueError:
+                    p = float("nan")
+                wil.append({"config": f"{ds}|{tag}", "test": f"CRISP(raw) vs {m}({v})",
+                            "p": round(p, 4), "crisp_mae": round(a.mean(), 4),
+                            "other_mae": round(b.mean(), 4),
+                            "winner": "CRISP" if a.mean() < b.mean() else m})
+    if skipped_illposed:
+        print(f"[{tag}] 跳过 {skipped_illposed} 个整列全缺失的病态子集", flush=True)
+    return rows, wil
 
 
 def main():
@@ -156,66 +273,13 @@ def main():
         all_wil += w
         print(f"[nd] {folder}: seeds={n} done", flush=True)
 
-    # ---- 3) 真实 n<d 子集（tmp_realnd/），用已落盘的 X_true / X_missing ----
-    TRD = os.path.join(BASE, "tmp_realnd")
-    by_ds = {}
-    for sub in sorted(os.listdir(TRD)):
-        p = os.path.join(TRD, sub)
-        if not os.path.isdir(p):
-            continue
-        ds = sub.rsplit("_s", 1)[0]
-        X = pd.read_csv(os.path.join(p, "X_true.csv")).values.astype(float)
-        Xm_store = pd.read_csv(os.path.join(p, "X_missing.csv")).values.astype(float)
-        miss = np.isnan(Xm_store)
-        if miss.sum() == 0:
-            continue
-        preds = {"CRISP": impute_crisp(Xm_store), "MICE": impute_mice(Xm_store),
-                 "KNN": impute_knn_direct(Xm_store), "mean": impute_mean(Xm_store),
-                 "SoftImpute": soft_impute(Xm_store)}
-        d_by = (int(miss.sum()), int((miss.sum(axis=1) == 1).sum()))
-        by_ds.setdefault(ds, {"mae": {m: {v: [] for v in VARIANTS} for m in PY},
-                              "sd": {m: {v: [] for v in VARIANTS} for m in PY},
-                              "nm": [], "ns": []})
-        by_ds[ds]["nm"].append(d_by[0])
-        by_ds[ds]["ns"].append(d_by[1])
-        for m in PY:
-            for v in VARIANTS:
-                Xp = variants_of(preds[m], Xm_store)[v]
-                by_ds[ds]["mae"][m][v].append(float(np.mean(np.abs(X[miss] - Xp[miss]))))
-                by_ds[ds]["sd"][m][v].append(float(np.mean(np.abs(Xp.sum(axis=1) - 100.0))))
-        print(f"[realnd] {sub}: n_miss={d_by[0]} done", flush=True)
-
-    for ds, agg in by_ds.items():
-        tot = X.shape[1]
-        for m in PY:
-            for v in VARIANTS:
-                a = np.array(agg["mae"][m][v])
-                all_rows.append({
-                    "config": f"{ds}|realnd", "mechanism": "observed", "nominal_rate": np.nan,
-                    "method": m, "variant": v,
-                    "mae_mean": round(a.mean(), 4), "mae_std": round(a.std(), 4),
-                    "sumdev_mean": round(float(np.mean(agg["sd"][m][v])), 4),
-                    "seeds_used": len(a),
-                    "actual_missing_per_seed": round(float(np.mean(agg["nm"])), 2),
-                    "actual_missing_pct": np.nan,
-                    "single_missing_rows_per_seed": round(float(np.mean(agg["ns"])), 2),
-                    "pct_missing_from_single_rows": round(float(np.mean(agg["ns"])) /
-                                                          max(float(np.mean(agg["nm"])), 1e-9) * 100, 1),
-                })
-        for m in PY:
-            if m == "CRISP":
-                continue
-            for v in ["raw", "+closure", "+backfill"]:
-                a = np.array(agg["mae"]["CRISP"]["raw"])
-                b = np.array(agg["mae"][m][v])
-                try:
-                    p = float(wilcoxon(a, b).pvalue)
-                except ValueError:
-                    p = float("nan")
-                all_wil.append({"config": f"{ds}|realnd", "test": f"CRISP(raw) vs {m}({v})",
-                                "p": round(p, 4), "crisp_mae": round(a.mean(), 4),
-                                "other_mae": round(b.mean(), 4),
-                                "winner": "CRISP" if a.mean() < b.mean() else m})
+    # ---- 3) 真实材料 n<d 子集（已落盘的 X_true / X_missing）----
+    #   tmp_realnd : 原有子集，d/n 1.125–1.333，单缺失行占 75–100%
+    #   tmp_realhr : 高比值子集，d/n 1.50–1.75，缺失率 20%/40%，多缺失行占主导
+    for root, tag in [("tmp_realnd", "realnd"), ("tmp_realhr", "realhr")]:
+        r, w = run_stored_subsets(os.path.join(BASE, root), tag)
+        all_rows += r
+        all_wil += w
 
     pd.DataFrame(all_rows).to_csv(os.path.join(BASE, "HONEST_results.csv"),
                                   index=False, encoding="utf-8-sig")

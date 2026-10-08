@@ -33,6 +33,34 @@ Standard tools handle neither combination well:
 
 `crisp()` fills missing entries proportionally to a profile estimated from complete rows, leaves structural zeros untouched, and **provably cannot** produce an infeasible composition — no post-hoc projection needed.
 
+`lcrisp()` is the same construction with a **local** (k-NN) profile per sample. On this benchmark the local variant is the stronger of the two on real data (steel 2.4×, cement 1.9×), so the honest unit of comparison below is the **CRISP family**, not `crisp()` alone.
+
+> **The honest bottom line**, stated up front so nobody has to dig for it: against a *closure-aware* baseline the family wins **34 of 80** configurations, mostly on synthetic `n < d` at ~10 % missingness (1.3–1.6×) and on `steel` (1.4–2.3×). It does **not** win on `ge`, on `cement`, at 20–30 % missingness, or on the original real `n < d` subsets. The "constraint satisfied exactly" claim holds **for imputed rows**; complete rows are passed through untouched, so the reported row-sum deviation is 0.0014–0.0029 on synthetic data rather than machine precision. Details and every correction are in [Benchmark results](#-benchmark-results) and [`HONEST_CRISP_2026-10-08.md`](HONEST_CRISP_2026-10-08.md).
+
+---
+
+## 🆕 What's new in 1.1.0
+
+**Library**
+
+| Change | Why |
+|---|---|
+| `crisp.py` is now **pure NumPy** — the unused `pandas` and `sklearn.neighbors` imports are gone | `import crisp` no longer drags in scikit-learn; the wheel depends on NumPy only |
+| NaN in a **non-compositional** column is **left untouched** (was: silently replaced by a column mean) | CRISP imputes the composition. Filling columns outside `comp_idx` was undocumented and surprising |
+| Degenerate all-NaN slices are handled explicitly — no more NumPy `Mean of empty slice` / `All-NaN slice` warnings | Cleaner output; the degenerate case is now intentional rather than incidental |
+
+**Benchmark harness**
+
+| Change | Why |
+|---|---|
+| `soft_impute` replaced with a **reference implementation** (soft-thresholded singular values + observed column centering) | The 1.0 version was hard rank truncation, which is a different algorithm. It **overstated SoftImpute's error by 1.4–3.6×**; see `softimpute_sensitivity.csv` |
+| `lcrisp` / `auto_crisp` are now benchmarked | Previously implemented but never evaluated |
+| New **real high-ratio `n < d`** subsets (`tmp_realhr/`, d/n 1.50–1.75, 20 %/40 % missing) | The old real subsets had d/n 1.13–1.33 with 75–100 % single-missing rows; `ge_nd` turned out not to be `n < d` at all |
+| R baselines run **multi-seed** (`run_r_baseline_multiseed.R` + `stage_r_multiseed.py`) | They were single-seed and therefore excluded from the paired tests |
+| `residual_backfill` now restores observed cells before closing | It was rescaling observed entries for baselines that do not preserve them, breaking the exact single-missing recovery |
+
+**Tests**: 89 unit tests (`tests/test_crisp.py`, `tests/test_baselines.py`), CI on Python 3.9 / 3.11 / 3.12.
+
 ---
 
 ## 📦 Installation
@@ -192,67 +220,127 @@ Where it *did* run (all `glass`, low missing rate), CRISP was far more accurate:
 
 Reproduce with [`run_lremplus_baseline.R`](run_lremplus_baseline.R) → [`lremplus_baseline.csv`](lremplus_baseline.csv).
 
-### 2. Synthetic n<d — where CRISP wins
+### 2. Synthetic n<d — where the CRISP family wins
 
-`n < d` synthetic compositions, MCAR 10% missing, 20 seeds. "Best fair baseline" = the best of {MICE, KNN, mean, SoftImpute} across raw / +closure / **+backfill**.
+`n < d` synthetic compositions, MCAR 10 % missing, 20 seeds. "Strongest fair baseline" = the best of {MICE, KNN, mean, SoftImpute} across raw / +closure / **+backfill** (the fair arm solves single-missing rows exactly from the closure).
 
-| Configuration | CRISP | best raw baseline | **best +backfill** | CRISP advantage |
+| Configuration | CRISP | LCRISP | family best | strongest raw baseline | **strongest +backfill** | family advantage |
+|---|---|---|---|---|---|---|
+| `synA1` (25 × 50) | **3.459** | 5.351 | **3.459** | MICE 8.391 | mean 5.434 | **1.57×** |
+| `synA2` (30 × 40) | **2.969** | 4.149 | **2.969** | MICE 6.670 | mean 3.899 | **1.31×** |
+| `synA3` (20 × 40) | **3.048** | 4.434 | **3.048** | MICE 7.738 | mean 4.163 | **1.37×** |
+| `synA4` (25 × 60) | **3.138** | 4.583 | **3.138** | MICE 6.439 | KNN 4.098 | **1.31×** |
+
+Here the local profile is *worse* than the global one: 60–70 % of rows are usable but each carries several missing entries, so k-NN neighbours are too noisy.
+
+**Read this honestly:** the advantage against a closure-aware baseline is **1.3–1.6×**, not the 2–2.5× you get by comparing against un-projected regression output. And these are synthetic pools.
+
+### 3. Low-missingness data — `CRISP` loses, `LCRISP` wins
+
+MCAR 10 %, 20 seeds:
+
+| Dataset | CRISP | **LCRISP** | strongest raw baseline | **strongest +backfill** | family verdict |
+|---|---|---|---|---|---|
+| `ge` (86 × 9) | 2.435 | 2.062 | MICE 1.646 | MICE 1.644 | loses 1.25× |
+| `glass` (40 × 8) | 0.073 | **0.061** | MICE 0.075 | KNN 0.062 | tie |
+| `synthetic` (300 × 8) | **4.286** | 5.343 | MICE 3.736 | MICE 3.704 | loses 1.16× |
+| `steel` (300 × 13) | 1.513 | **0.636** | MICE 1.548 | KNN 1.145 | **wins 1.80×** |
+| `cement` (1030 × 7) | 1.074 | **0.551** | MICE 0.566 | KNN 0.336 | loses 1.64× |
+
+Two things to take away:
+
+- **`LCRISP` is consistently better than `CRISP` on the larger real datasets** (steel 2.4×, cement 1.9×) even though the missing rate is low. The global profile is the weaker variant there.
+- **`auto_crisp` never selects it.** The router switches on the missing *rate* (`threshold=0.15`), and at an ~8 % rate it always picks `crisp` — exactly the wrong arm on steel and cement. Every `AutoCRISP` row in the result tables is bit-identical to the `CRISP` row, so "adaptive routing" is a no-op on this benchmark.
+
+### 4. Real high-ratio n<d subsets — new in 1.1.0
+
+The old "real n<d" subsets had `d/n = 1.13–1.33`, and **75–100 % of their missing entries came from single-missing rows** — where `x̂ = 100 − Σ known` is an arithmetic identity that any closure-aware method reproduces. They carried almost no information.
+
+`gen_real_hr.py` builds better ones from the real data: `d/n = 1.50–1.75`, missingness 20 %/40 % (still only at non-zero entries), so **multi-missing rows dominate** (only 25–34 % of missing entries come from single-missing rows on glass/ge/cement, 6 % on steel).
+
+| Subset group | n × d | d/n | family best | strongest +backfill | family verdict |
+|---|---|---|---|---|---|
+| `steel_MCAR_20` | 8 × 13 | 1.62 | 2.898 | MICE 4.180 | **wins 1.44×** |
+| `steel_MNAR_20` | 8 × 13 | 1.62 | 1.806 | MICE 2.615 | **wins 1.45×** |
+| `steel_MNAR_40` | 8 × 13 | 1.62 | 2.490 | MICE 4.444 | **wins 1.79×** |
+| `glass_MNAR_40` | 5 × 8 | 1.60 | 0.061 | SoftImpute 0.089 | **wins 1.46×** |
+| `cement_*` (4 groups) | 4 × 7 | 1.75 | 0.49–2.76 | KNN / MICE / SoftImpute | loses 1.05–1.60× |
+| `ge_*` (4 groups) | 6 × 9 | 1.50 | 2.94–13.43 | KNN / mean | loses 1.2–1.9× |
+
+The real-data advantage is **dataset-specific**: clear on `steel` (all mechanisms) and on `glass` at high missingness, absent on `ge` and `cement`.
+
+### 5. `ge_nd` never belonged in the n<d claims
+
+`ge_nd` was described as the one *real* high-dimensional `n < d` dataset. It is not: it is the first 20 rows of `ge` padded with **21 identically-zero columns**, so `d_eff = 9` with `n = 20` → an effective `d/n` of **0.45**, i.e. `n > d`. It is retained in the result tables for continuity, labelled as such, and excluded from every `n < d` claim.
+
+### 6. Overall win rate
+
+Across all 80 configurations, against the strongest closure-aware baseline:
+
+| Missing-rate group | CRISP alone wins | **family (best of CRISP/LCRISP/AutoCRISP)** | family median advantage |
+|---|---|---|---|
+| 10 % | 12 / 30 | **17 / 30** | **1.285×** |
+| 20 % | 4 / 23 | 8 / 23 | 0.850× |
+| 30 % | 5 / 15 | 5 / 15 | 0.940× |
+| 40 % | 4 / 8 | 4 / 8 | 1.040× |
+| real n<d (single draw) | 0 / 4 | 0 / 4 | 0.860× |
+| **total** | **25 / 80** | **34 / 80** | — |
+
+The family is the honest unit of comparison — `LCRISP` is part of the method — and it wins **34 of 80**, with the advantage concentrated at 10 % missingness and on `steel`.
+
+### 7. The official R baselines, on matched seeds
+
+`run_r_baseline.R` runs each configuration **once** (`seed=42`), so the R baselines could not enter a paired test. `stage_r_multiseed.py` + `run_r_baseline_multiseed.R` now cover **1199 draws over 60 configurations**, and `compare_with_r.py` pairs them seed-by-seed against the Python implementations (896 paired combinations, paired Wilcoxon):
+
+| R baseline | pairs | Python more accurate | Python sig. better | R sig. better | median ratio (R / Python) |
+|---|---|---|---|---|---|
+| `impKNNa` (robCompositions) | 420 | 231 (55 %) | 201 | 85 | 1.18× |
+| `missForest` | 420 | 251 (60 %) | 221 | 132 | **1.03×** |
+| `lrEMplus` (zCompositions) | 56 | **56 (100 %)** | 49 | **0** | **72×** |
+
+`missForest` is a genuinely competitive baseline — within ~3 % of the Python implementations on the median configuration. When `lrEMplus` runs at all it is far worse: on `glass` MNAR 20 % its MAE is 22 246 against CRISP's 0.049.
+
+### 8. Constraint satisfaction
+
+| | CRISP / LCRISP | MICE | KNN | SoftImpute |
 |---|---|---|---|---|
-| `synA1` (25 × 50) | **3.459** | MICE 8.391 | mean 5.434 | **1.57×** |
-| `synA2` (30 × 40) | **2.969** | MICE 6.670 | mean 3.899 | **1.31×** |
-| `synA3` (20 × 40) | **3.048** | MICE 7.738 | mean 4.163 | **1.37×** |
-| `synA4` (25 × 60) | **3.138** | MICE 6.439 | KNN 4.098 | **1.31×** |
-| `ge_nd` (20 × 30, effective d = 9) | 4.274 | MICE 3.872 | KNN 1.991 | **CRISP loses 2.15×** |
-
-**Read this honestly:** the headline advantage is **1.3–1.6×** against a fair baseline, not the 2–2.5× you get by comparing against un-projected regression output. And the one "real" high-dimensional table in this group is not actually high-dimensional — 21 of its 30 columns are identically zero (see [Limitations](#-limitations)).
-
-### 3. Low-missingness data — CRISP is *not* the accuracy winner
-
-MCAR 10%:
-
-| Dataset | CRISP | best raw baseline | **best +backfill** | Verdict |
-|---|---|---|---|---|
-| `ge` (55% zeros) | 2.435 | MICE 1.646 | MICE 1.644 | CRISP loses |
-| `glass` (21%) | 0.073 | MICE 0.075 | KNN 0.062 | CRISP loses |
-| `synthetic` (42%) | 4.286 | MICE 3.736 | MICE 3.704 | CRISP loses |
-| `steel` (17%) | 1.513 | MICE 1.548 | KNN 1.145 | CRISP loses |
-| `cement` (20%) | 1.074 | MICE 0.566 | KNN 0.336 | CRISP loses |
-
-On dense, low-missingness data CRISP is competitive but **not** the most accurate. Its differentiators there are the **strict constraint guarantee**, **structural-zero semantics** and **zero tuning** — not accuracy.
-
-### 4. Real-material n<d subsets — the accuracy advantage disappears
-
-| Subset | single-missing rows | CRISP | best raw baseline | **+backfill** |
-|---|---|---|---|---|
-| `glass` (n=6, d=8) | **100%** | 0.000 | MICE 0.136 | **all 0.000 — tie** |
-| `cement` (n=6, d=7) | **100%** | 0.000 | MICE 1.807 | **all 0.000 — tie** |
-| `ge` (n=8, d=9) | **100%** | 0.000 | MICE 10.272 | **all 0.000 — tie** |
-| `steel` (n=10, d=13) | 75% | 3.695 | MICE 5.711 | **mean 2.769 — CRISP loses** |
-
-When every missing row has a single missing entry, `x̂ = 100 − Σ known` is an arithmetic identity, so **any** method given the closure solves those rows exactly. On the one subset with a meaningful share of multi-missing rows, a closure-aware mean beats CRISP. We report this rather than hiding it.
-
-### 5. Overall win rate
-
-Across all 100 configurations, against the strongest fair (+backfill) baseline, **CRISP is the most accurate in 20**.
-
-| Group | CRISP best in |
-|---|---|
-| synthetic/synthetic-style n<d, 10% missing | **14 / 30** |
-| low-missingness, 20% missing | 1 / 15 |
-| n<d, 30% missing | 5 / 15 |
-| real-material n<d | 0 / 4 |
-
-### 6. Constraint satisfaction
-
-| | CRISP | MICE | KNN | SoftImpute |
-|---|---|---|---|---|
-| low-missingness | 0.0000 | 0.0004–0.0151 | 0.078–4.26 | 0.24–20.1 |
-| synthetic n<d | **0.0014–0.0029** | 6.86–8.58 | 5.70–7.97 | 7.85–9.70 |
-| real n<d | 0.0000 | 2.95 | 7.48 | 9.13 |
+| low-missingness | **0.0000** | 0.0004–0.0151 | 0.078–4.26 | 0.05–3.93 |
+| synthetic n<d | **0.0014–0.0029** | 6.86–8.58 | 5.70–7.97 | 6.79–8.60 |
+| real high-ratio n<d | **0.0000** | 0.07–2.95 | 0.68–7.48 | 0.65–4.51 |
 
 *(mean absolute row-sum deviation from 100)*
 
-CRISP's violation is **three orders of magnitude smaller** than the baselines' on n<d data, and it needs no post-hoc projection. It is *not* exactly zero on synthetic data: rows with no missing values are passed through untouched, which is why you see 0.0014–0.0029 rather than machine precision.
+The violation is **three orders of magnitude smaller** on `n < d` data, with no post-hoc projection. It is not exactly zero on synthetic data: rows with no missing values are passed through untouched.
+
+### 9. Downstream usability — corrected in 1.1.0
+
+The manuscript claims that only CRISP-imputed matrices preserve a positive downstream predictive R² (+0.11) while MICE/KNN/mean collapse to negative values (−0.13 … −0.31). **That claim is not reproduced.** No script generating it existed; the figure plotted four hard-coded literals.
+
+`downstream_eval.py` runs the experiment properly (20 % missing, 5 seeds, gradient-boosted surrogate, out-of-fold R² on the full datasets):
+
+| Dataset (reference R², no missingness) | CRISP | MICE | KNN | mean | SoftImpute |
+|---|---|---|---|---|---|
+| `steel` (0.815) | +0.699 | +0.727 | **+0.757** | +0.701 | +0.560 |
+| `cement` (0.467) | +0.439 | **+0.445** | +0.437 | +0.419 | +0.430 |
+| `ge` (0.399) | +0.372 | +0.369 | +0.352 | +0.374 | **+0.440** |
+| `glass` (0.675) | **+0.439** | +0.274 | +0.187 | −0.015 | −0.239 |
+
+**Every method keeps a positive R² on the larger datasets.** CRISP is the best imputer downstream only on `glass` (n = 40). The "only CRISP survives" claim must be deleted; the defensible statement is the weaker "all imputers degrade downstream R² relative to complete data, and the ranking is dataset-dependent".
+
+### 10. SoftImpute — a corrected baseline
+
+The 1.0 `soft_impute` was **hard rank truncation**, not SoftImpute (no soft-thresholding, no centering). Against the reference implementation the old code overstated SoftImpute's error by **1.4–3.6×**:
+
+| Configuration | 1.0 (hard rank truncation) | reference (best λ) | overstatement |
+|---|---|---|---|
+| `ge` low-miss MCAR 10 % | 29.34 | 8.24 | 3.56× |
+| `cement` low-miss MCAR 10 % | 3.45 | 1.15 | 3.01× |
+| `ge_nd` MCAR 10 % | 24.78 | 8.44 | 2.94× |
+| `steel` low-miss MCAR 10 % | 5.88 | 2.72 | 2.16× |
+| `synA1` n<d MCAR 10 % | 13.12 | 8.07 | 1.63× |
+| `steel` realhr MCAR 20 % | 5.50 | 3.92 | 1.40× |
+
+Crucially the conclusion survives: no λ makes SoftImpute competitive on synthetic `n < d` — the whole sweep spans 8.07–9.12 against CRISP's 3.46. See `softimpute_sensitivity.csv`.
 
 ---
 
@@ -260,17 +348,16 @@ CRISP's violation is **three orders of magnitude smaller** than the baselines' o
 
 We would rather state these than have a reviewer find them.
 
-1. **The accuracy advantage is narrow.** It holds for **synthetic `n < d` data at ~10% missingness** (~1.3–1.6×). It does **not** hold on low-missingness data (5/5 datasets lost), at 20–30% missingness, or on real-material `n < d` subsets.
-2. **Real high-dimensional validation is missing.** The only "real high-dimensional" table in the benchmark (`ge_nd`, nominal 30 columns) has **21 identically-zero columns** — effective `d = 9` with `n = 20`, so it is *not* `n < d`. Genuine real high-dimensional `n < d` compositional data remains to be tested.
-3. **The estimator is simple and not new in kind.** It is a plug-in form of a known conditional mean; the contribution is the structural-zero handling plus the constructive guarantee, not a new estimator class.
-4. **The Dirichlet reading is exact only for the mean / geometric-mean profiles.** The default median profile has an approximate reading and a small non-vanishing bias.
-5. **No prospective or experimental validation.** All experiments are retrospective.
-6. **Nominal vs actual missingness differ.** Missingness is injected only at non-zero entries, and 54–86% of the matrices are structural zeros, so a nominal 10% becomes 0.6–8.5% of cells. Per-configuration actual counts are in [`HONEST_results.csv`](HONEST_results.csv).
-7. **`SoftImpute` here is a local implementation** (hard-thresholded SVD, no centering), not a reference implementation of Mazumder et al. — treat that comparison with caution.
-8. **`lcrisp` / `auto_crisp` are un-evaluated.**
-9. **`crisp.py` imports `sklearn.neighbors.NearestNeighbors` without using it.** The core algorithm is pure NumPy, but the import makes scikit-learn a hard requirement.
-
----
+1. **The accuracy advantage is narrow.** The CRISP family wins 34 of 80 configurations. It is concentrated on synthetic `n < d` at ~10 % missingness (1.3–1.6×) and on `steel` (1.4–2.3×). It does **not** hold on `ge` or `cement`, at 20–30 % missingness, or on the old real `n < d` subsets.
+2. **Real high-dimensional validation is still missing.** The best real high-ratio subsets reach `d/n = 1.75`; the synthetic pools reach 2.4. A genuinely high-dimensional *real* compositional dataset with `n < d` could not be obtained, so the strongest `n < d` claim still rests on synthetic data.
+3. **The router is wrong.** `auto_crisp` switches on the missing rate, so on every low-missingness dataset in the benchmark it reproduces `crisp` exactly — even where `lcrisp` is 1.9–2.4× better. Any "adaptive routing" claim is unsupported by these results.
+4. **The estimator is simple and not new in kind.** It is a plug-in form of a known conditional mean; the contribution is structural-zero handling plus the constructive guarantee, not a new estimator class.
+5. **The Dirichlet reading is exact only for the mean / geometric-mean profiles.** The default median profile converges to the population median and carries a non-vanishing bias.
+6. **The downstream claim in the draft is not reproduced** — see §9.
+7. **Nominal and actual missingness differ.** Missingness is injected only at non-zero entries, so a nominal 10 % becomes 1.4–8.3 % of cells; per-configuration values are in `HONEST_results.csv`.
+8. **The R baselines have gaps.** `lrEMplus` succeeds on 116 of 1199 draws (it needs `n > d`); `impKNNa` and `missForest` succeed on all 1199.
+9. **`lcrisp` is O(n²·d).** As of 1.1.0 the inner loops are vectorised (~110× faster, bit-identical output), but it still forms an `n × d` distance row per sample.
+10. **One missing draw per subset** in `tmp_realnd/` / `tmp_realhr/`; the subset is the resampling unit, so a paired test across subsets resamples overlapping rows.
 
 ## 🔁 Reproducing the results
 
@@ -278,23 +365,31 @@ Everything in this repository regenerates from the scripts with fixed seeds. Req
 
 ```bash
 # datasets are bundled in data/ — no download needed
-python gen_missing.py          # build tmp/      low-missingness draws
-python gen_missing_nd.py       # build tmp_nd/   n<d draws
+python gen_missing.py          # build tmp/       low-missingness draws
+python gen_missing_nd.py       # build tmp_nd/    synthetic n<d draws
 python gen_real_nd.py          # build tmp_realnd/  real n<d subsets
+python gen_real_hr.py          # build tmp_realhr/  real HIGH-RATIO n<d subsets
 
 # Python baselines + CRISP
 python final_compare_v3.py     # -> final_results_v3.csv, wilcoxon_v3.csv
 python final_nd_v3.py          # -> final_results_nd_v3.csv, wilcoxon_nd_v3.csv
 python final_real_nd.py        # -> final_results_real_nd.csv
 
+# honest re-run: adds +closure / +backfill fair-comparison arms,
+# LCRISP / AutoCRISP arms, and the high-ratio real subsets
+python honest_rerun.py         # -> HONEST_results.csv, HONEST_wilcoxon.csv
+python summarize_honest.py     # -> honest_summary.txt
+python softimpute_sensitivity.py   # -> softimpute_sensitivity.csv
+
 # R baselines (optional but recommended)
 Rscript run_r_baseline.R impKNNa tmp
 Rscript run_r_baseline.R missForest tmp
-Rscript run_lremplus_baseline.R        # -> lremplus_baseline.csv
+Rscript run_lremplus_baseline.R    # -> lremplus_baseline.csv  (availability + accuracy)
 
-# honest re-run: adds +closure / +backfill fair-comparison arms
-python honest_rerun.py         # -> HONEST_results.csv, HONEST_wilcoxon.csv
-python summarize_honest.py     # -> honest_summary.txt
+# R baselines, multi-seed (so they can enter the paired tests) — slow, run in background
+python stage_r_multiseed.py        # -> tmp_rms/ (1199 per-seed missing matrices)
+Rscript run_r_baseline_multiseed.R # -> final_results_r_multiseed.csv
+
 python make_figures.py         # -> figures/*.pdf
 ```
 
@@ -309,7 +404,9 @@ pip install pytest
 pytest -q
 ```
 
-**56 tests, ~1 s.** `tests/test_crisp.py` pins the invariants the method is advertised on:
+**89 tests, ~2 s.** Two files:
+
+`tests/test_crisp.py` pins the invariants the method is advertised on:
 
 | Group | What is checked |
 |---|---|
@@ -321,6 +418,15 @@ pytest -q
 | Regression guards | full-observation rows are **not** re-projected (documents the non-zero SumDev); nearly-complete rows do enter the profile; NaN in a non-compositional column becomes a column mean |
 
 The regression guards exist so that behaviour the released benchmarks depend on — including behaviour the manuscript describes differently — cannot drift silently.
+
+`tests/test_baselines.py` covers the harness the results rest on:
+
+| Group | What is checked |
+|---|---|
+| `make_missing` | never marks a structural zero (all mechanisms × rates); deterministic; actual rate matches nominal on non-zero entries; rejects unknown mechanisms |
+| `find_data` | resolves the datasets bundled in `data/`; returns `None` for unknown files |
+| `soft_impute` | shape and finiteness; determinism; beats column means on a genuinely low-rank matrix; `lam_ratio=0` provably degenerates to column-mean imputation; the centering flag has an effect; survives a fully-missing column; sweep helper returns the right keys |
+| fair-comparison arms | `closure_project` closes every row and leaves zero rows at zero; `residual_backfill` solves single-missing rows exactly and leaves multi-missing rows to the baseline; `variants_of` exposes exactly the three documented arms |
 
 CI runs the suite on Python 3.9 / 3.11 / 3.12 via [`.github/workflows/tests.yml`](.github/workflows/tests.yml). The R baselines are not covered by CI (they need `robCompositions` / `zCompositions`) and are run manually.
 
@@ -335,23 +441,31 @@ crisp-imputer/
 ├── app_demo.py                  # interactive demo
 │
 ├── benchmark_zeros.py           # structural-zero benchmark, make_missing, data loaders
-├── final_compare_v3.py          # low-missingness comparison
-├── final_nd_v3.py               # n<d comparison
+├── final_compare_v3.py          # low-missingness comparison; reference soft_impute
+├── final_nd_v3.py               # synthetic n<d comparison
 ├── final_real_nd.py             # real-material n<d subsets
-├── honest_rerun.py              # +closure / +backfill fair-comparison re-run
+├── honest_rerun.py              # +closure / +backfill arms, LCRISP / AutoCRISP, high-ratio subsets
 ├── summarize_honest.py          # honest tables
-├── gen_missing*.py              # missingness generators
+├── softimpute_sensitivity.py    # SoftImpute regularisation sweep vs the 1.0 implementation
+├── gen_missing.py               # low-missingness missingness generator
+├── gen_missing_nd.py            # synthetic n<d generator
+├── gen_real_nd.py               # real n<d subset generator
+├── gen_real_hr.py               # real HIGH-RATIO n<d subset generator
+├── stage_r_multiseed.py         # stage per-seed missing matrices for the R baselines
 ├── make_figures.py              # figures
-├── run_r_baseline.R             # impKNNa / missForest baselines
-├── run_lremplus_baseline.R      # lrEMplus baseline + fair arm
 ├── verify_crisp_theory.py       # theory sanity checks
+├── run_r_baseline.R             # impKNNa / missForest baselines (single seed)
+├── run_r_baseline_multiseed.R   # impKNNa / missForest / lrEMplus, multi-seed
+├── run_lremplus_baseline.R      # lrEMplus availability + accuracy audit
 │
-├── tests/test_crisp.py          # 56 unit tests (pytest)
+├── tests/test_crisp.py          # library invariants (pytest)
+├── tests/test_baselines.py      # harness: make_missing, find_data, soft_impute, fair arms
 ├── conftest.py                  # makes the repo root importable under pytest
 ├── .github/workflows/tests.yml  # CI: pytest on Python 3.9 / 3.11 / 3.12
 │
 ├── data/                        # bundled datasets (steel, glass, ge) + provenance
-├── tmp/  tmp_nd/  tmp_realnd/   # missingness draws (X_true / X_missing committed)
+├── tmp/  tmp_nd/                # 20-seed missingness draws (X_true / X_missing committed)
+├── tmp_realnd/  tmp_realhr/     # real n<d and real high-ratio n<d subsets
 ├── figures/                     # generated figures
 │
 ├── *.csv                        # result tables (see below)
@@ -379,7 +493,17 @@ crisp-imputer/
 
 ## 📄 Manuscript status
 
-The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`) is **v5 and is under revision**. An independent audit of the released artifacts against the draft's claims found several statements that the data does not support — most importantly a claim that the standard compositional package cannot handle this data at all (it *can*, on 3 configurations; the accurate and stronger statement is the `n > d` requirement documented above), and a real-material accuracy claim that disappears under a fair closure-aware comparison.
+The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`) is **v5 and is under revision**. An independent audit of the released artifacts against the draft's claims found several statements that the data does not support:
+
+| Draft claim | Status |
+|---|---|
+| "the standard compositional package cannot handle this data at all" | **Partly wrong.** `lrEMplus` *can* run — on 3 of 140 configurations. The accurate and much stronger statement is the `n > d` requirement: 109 configurations fail because `lrEMplus` needs more rows than columns. |
+| "CRISP is 2–2.5× more accurate than the baselines" | **Overstated.** Against a closure-aware baseline the advantage is 1.3–1.6× on synthetic `n < d` at 10 % missingness, and absent elsewhere. The family wins 34 of 80 configurations. |
+| "only CRISP-imputed matrices keep a positive downstream R²; MICE/KNN/mean collapse to negative" | **Not reproduced.** No generating script existed. Every method keeps a positive R² on the three larger datasets; CRISP is best only on `glass`. |
+| "SumDev = 0 to machine precision" | **Overstated.** 0.0000 on low-missingness and real subsets; **0.0014–0.0029** on synthetic `n < d`, because complete rows are not re-projected. |
+| "a genuinely high-dimensional real `n < d` dataset (ge_nd)" | **False as stated.** `ge_nd` is `ge` padded with 21 zero columns — effective `d/n = 0.45`. Replaced by the real high-ratio subsets (`d/n = 1.50–1.75`). |
+| "SoftImpute is 3–12× worse than CRISP" | **Baseline was mis-implemented.** The 1.0 `soft_impute` was hard rank truncation; it overstated SoftImpute's error by 1.4–3.6×. The corrected conclusion still holds, but by a smaller margin. |
+| "adaptive routing between global and local profiles" | **Unsupported.** `auto_crisp` routes on the missing rate alone, so it reproduces `crisp` on every low-missingness dataset — even where `lcrisp` is 1.9–2.4× better. |
 
 [`HONEST_CRISP_2026-10-08.md`](HONEST_CRISP_2026-10-08.md) records, claim by claim, what holds, what does not, and what the corrected numbers are. **Prefer that document over the draft's §3 until the revision is published.**
 
@@ -387,22 +511,27 @@ The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`)
 
 ## ⚠️ Known issues
 
-**Resolved**
+**Resolved in 1.1.0**
 
-- [x] **Unit tests** — 56 tests covering the closure guarantee, non-negativity, structural-zero preservation, single-missing exact recovery, API behaviour, variants, helpers, edge cases and golden cases → [`tests/`](tests/)
-- [x] **CI** — pytest on Python 3.9 / 3.11 / 3.12 → [`.github/workflows/tests.yml`](.github/workflows/tests.yml)
-- [x] **Self-contained data** — the three external datasets are bundled in `data/`; `find_data()` resolves them locally
+- [x] **Unit tests** — 89 tests across `tests/test_crisp.py` and `tests/test_baselines.py`
+- [x] **CI** — pytest on Python 3.9 / 3.11 / 3.12
+- [x] **Self-contained data** — the three external datasets are bundled in `data/`
+- [x] **`lcrisp` / `auto_crisp` benchmarked** — both now appear in `HONEST_results.csv`
+- [x] **`lrEMplus` integrated** — availability and accuracy audited over all 140 configurations (`lremplus_baseline.csv`), summarised in the honest tables
+- [x] **`ge_nd` replaced** — real high-ratio `n < d` subsets (`tmp_realhr/`) now carry the real-data claim; `ge_nd` is kept but explicitly labelled as *not* `n < d`
+- [x] **`SoftImpute` reference implementation** — soft-thresholded singular values + centering; the 1.0 implementation (hard rank truncation) overstated its error by 1.4–3.6×
+- [x] **R baselines multi-seed** — `run_r_baseline_multiseed.R` covers 1199 draws over 60 configurations, so they can enter the paired tests
+- [x] **Unused imports removed** — `crisp.py` is pure NumPy; scikit-learn is no longer a runtime dependency
+- [x] **Non-compositional NaN left untouched**
+- [x] **All-NaN slices handled without RuntimeWarnings**
 
 **Open**
 
-- [ ] `lcrisp` / `auto_crisp` have invariant tests but are still **not benchmarked** against the baselines
-- [ ] `lrEMplus` should be integrated as a first-class baseline in the main comparison tables (currently a separate script)
-- [ ] `ge_nd` needs replacing with a genuinely high-dimensional real compositional dataset — 21 of its 30 columns are identically zero, so it is not actually `n < d`
-- [ ] The `SoftImpute` baseline should use a reference implementation of Mazumder et al.
-- [ ] R baselines are single-seed (`seed=42`) while Python methods use 20 seeds — extend them to multiple seeds so they can enter the paired tests
-- [ ] `crisp.py` imports `pandas` and `sklearn.neighbors.NearestNeighbors` without using either; the core algorithm is pure NumPy, so both imports could be dropped (and scikit-learn would stop being a hard requirement)
-- [ ] NaN in a **non-compositional** column is silently replaced by that column's mean — `_column_mean_init` fills *every* column. Compositional columns are then overwritten by the allocation, so the benchmarks are unaffected, but it is surprising library behaviour
-- [ ] An entirely-NaN column emits NumPy `RuntimeWarning`s (`Mean of empty slice`, `All-NaN slice encountered`). The output is still correct, but the degenerate case should be handled explicitly
+- [ ] **`make_figures.py` does not regenerate from `HONEST_results.csv`.** Figure 3's SumDev panel and Figure 5 are hard-coded literals (`make_figures.py` around lines 59 and 98) rather than read from the result CSVs, and they still carry v1.0 numbers. Figures must be regenerated from the tables before any submission.
+- [ ] **`lcrisp` is O(n²·d) in a Python loop.** Benchmarking it on the large datasets (n = 1030) dominates the honest re-run's runtime. Vectorise it (or use a spatial index) before recommending it for large pools.
+- [ ] **The real high-ratio subsets reach d/n = 1.50–1.75, not the d/n > 2 of the synthetic pools.** A genuinely high-dimensional *real* compositional dataset with `n < d` could not be obtained, so the strongest `n < d` claim still rests on synthetic data.
+- [ ] One missing draw per subset in `tmp_realnd/` / `tmp_realhr/`; the subset is the resampling unit, so a paired test over subsets resamples overlapping rows.
+- [ ] No packaged release on PyPI — `pip install crisp-imputer` does not work yet.
 
 Contributions and corrections are welcome — please open an issue.
 

@@ -7,10 +7,10 @@ AutoCRISP   (Adaptive switch):  automatically selects between CRISP and LCRISP.
 All variants guarantee strict simplex constraints (sum = total, non-negative).
 """
 
+import warnings
+
 import numpy as np
-import pandas as pd
-from typing import Union, List, Optional, Tuple
-from sklearn.neighbors import NearestNeighbors
+from typing import List, Optional
 
 __all__ = [
     "CRISPImputer",
@@ -24,12 +24,27 @@ __all__ = [
     "compositional_mae",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 # ============================================================================
 # Utility functions
 # ============================================================================
+
+def _quiet_nanmean(a, axis=0):
+    """`np.nanmean` without the "Mean of empty slice" RuntimeWarning on all-NaN slices."""
+    a = np.asarray(a, dtype=float)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmean(a, axis=axis)
+
+
+def _quiet_nanmedian(a, axis=0):
+    """`np.nanmedian` without the "All-NaN slice encountered" RuntimeWarning."""
+    a = np.asarray(a, dtype=float)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmedian(a, axis=axis)
 
 def project_to_simplex(
     x: np.ndarray,
@@ -142,12 +157,19 @@ class _BaseCRISPImputer:
                 X_filled[i, self.comp_idx[j]] = X_filled[i, self.comp_idx[j]] / row_sum * self.total
 
     def _column_mean_init(self, X: np.ndarray) -> np.ndarray:
-        """Initialize missing values with column means."""
-        X_filled = X.copy()
-        col_means = np.nanmean(X, axis=0)
-        for j in range(X_filled.shape[1]):
-            if np.any(np.isnan(X_filled[:, j])):
-                X_filled[np.isnan(X_filled[:, j]), j] = col_means[j]
+        """Initialise missing values in *compositional* columns with column means.
+
+        Columns outside `comp_idx` are not part of the composition and CRISP does not
+        impute them, so a NaN there is left untouched rather than silently replaced by
+        a column mean. (Changed in 1.1.0: earlier versions filled every column.)
+        """
+        X_filled = np.array(X, dtype=float, copy=True)
+        col_means = _quiet_nanmean(X, axis=0)
+        for j in self.comp_idx:
+            col = X_filled[:, j]
+            mask = np.isnan(col)
+            if mask.any() and not np.isnan(col_means[j]):
+                col[mask] = col_means[j]
         return X_filled
 
     def _estimate_global_profile(self, X_missing: np.ndarray) -> np.ndarray:
@@ -163,7 +185,7 @@ class _BaseCRISPImputer:
             X_usable = X_missing[usable_rows][:, self.comp_idx]
             # For nearly-complete rows, fill the single missing with column mean
             for col in range(n_comp):
-                col_mean = np.nanmean(X_usable[:, col])
+                col_mean = _quiet_nanmean(X_usable[:, col], axis=0)
                 mask_nan = np.isnan(X_usable[:, col])
                 X_usable[mask_nan, col] = col_mean if not np.isnan(col_mean) else self.min_positive
             
@@ -175,7 +197,7 @@ class _BaseCRISPImputer:
             profile = profile / profile.sum()
         else:
             # Fallback: use column median ratios (more informative than uniform)
-            col_medians = np.nanmedian(X_missing[:, self.comp_idx], axis=0)
+            col_medians = _quiet_nanmedian(X_missing[:, self.comp_idx], axis=0)
             col_medians = np.maximum(col_medians, self.min_positive)
             if np.any(np.isnan(col_medians)):
                 profile = np.ones(n_comp) / n_comp
@@ -184,62 +206,67 @@ class _BaseCRISPImputer:
         return profile
 
     def _estimate_local_profiles(self, X_filled: np.ndarray, X_missing: np.ndarray, n_neighbors: int) -> np.ndarray:
-        """Estimate local profile per sample using k-NN."""
+        """Estimate a local k-NN profile for every sample.
+
+        The distance computation is vectorised over candidate neighbours and features.
+        The original implementation used a triply nested Python loop
+        (`for i: for j: for f:`), which made LCRISP impractical beyond a few hundred
+        rows — at n = 1030 a single call took ~10 s.
+        """
         n_samples = X_filled.shape[0]
         n_comp = self.n_comp_
-        local_profiles = np.zeros((n_samples, n_comp))
-        
+        local_profiles = np.empty((n_samples, n_comp))
+
+        comp_vals = X_filled[:, self.comp_idx]
+        comp_sum = comp_vals.sum(axis=1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            normalized = comp_vals / comp_sum[:, None]
+        normalized[~np.isfinite(normalized)] = 0.0
+        comp_filled = np.nan_to_num(comp_vals, nan=0.0)
+        obs_comp = ~np.isnan(X_missing[:, self.comp_idx])
+
+        if len(self.non_comp_idx) > 0:
+            feats = list(self.non_comp_idx)
+            vals_f = np.nan_to_num(X_filled[:, feats], nan=0.0)
+            obs_f = ~np.isnan(X_missing[:, feats])
+        else:
+            feats = vals_f = obs_f = None
+
         for i in range(n_samples):
-            if len(self.non_comp_idx) > 0:
-                features_for_distance = self.non_comp_idx
+            if feats is not None:
+                joint = obs_f & obs_f[i][None, :]
+                vals, vi = vals_f, vals_f[i]
             else:
-                features_for_distance = [idx for idx in self.comp_idx if not np.isnan(X_missing[i, idx])]
-                if len(features_for_distance) == 0:
+                known = obs_comp[i]
+                if not known.any():
                     local_profiles[i] = self.global_profile_
                     continue
-            
-            distances = np.zeros(n_samples)
-            for j in range(n_samples):
-                valid_count = 0
-                dist_sum = 0.0
-                for f in features_for_distance:
-                    if not np.isnan(X_missing[i, f]) and not np.isnan(X_missing[j, f]):
-                        dist_sum += (X_filled[i, f] - X_filled[j, f]) ** 2
-                        valid_count += 1
-                if valid_count == 0:
-                    distances[j] = np.inf
-                else:
-                    distances[j] = dist_sum / valid_count
-            
-            sorted_idx = np.argsort(distances)
-            neighbor_idx = []
-            for idx in sorted_idx:
-                if len(neighbor_idx) >= n_neighbors:
-                    break
-                if distances[idx] < np.inf and distances[idx] > 1e-10:
-                    neighbor_idx.append(int(idx))
-            
-            if len(neighbor_idx) == 0:
+                joint = obs_comp & known[None, :]
+                vals, vi = comp_filled, comp_filled[i]
+
+            denom = joint.sum(axis=1)
+            with np.errstate(invalid="ignore"):
+                num = np.where(joint, (vals - vi[None, :]) ** 2, 0.0).sum(axis=1)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                distances = np.where(denom > 0, num / np.maximum(denom, 1), np.inf)
+
+            order = np.argsort(distances)
+            usable = np.isfinite(distances[order]) & (distances[order] > 1e-10)
+            candidates = order[usable][:n_neighbors]
+
+            if candidates.size == 0:
                 local_profiles[i] = self.global_profile_
                 continue
-            
-            neighbor_comps = []
-            for idx in neighbor_idx:
-                comp_values = X_filled[idx, self.comp_idx]
-                comp_sum = comp_values.sum()
-                if comp_sum > 0:
-                    neighbor_comps.append(comp_values / comp_sum)
-            
-            if len(neighbor_comps) == 0:
+
+            keep = comp_sum[candidates] > 0
+            if not keep.any():
                 local_profiles[i] = self.global_profile_
                 continue
-            
-            neighbor_comps = np.array(neighbor_comps)
-            local_profile = np.median(neighbor_comps, axis=0)
+
+            local_profile = np.median(normalized[candidates[keep]], axis=0)
             local_profile = np.maximum(local_profile, self.min_positive)
-            local_profile = local_profile / local_profile.sum()
-            local_profiles[i] = local_profile
-        
+            local_profiles[i] = local_profile / local_profile.sum()
+
         return local_profiles
 
     def _allocate_missing(self, X_filled: np.ndarray, X_missing: np.ndarray, i: int, profile: np.ndarray) -> None:
