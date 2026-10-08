@@ -7,6 +7,7 @@
 *Constraint-guaranteed imputation for compositional data with structural zeros.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![tests](https://github.com/wenyu2026/crisp-imputer/actions/workflows/tests.yml/badge.svg)](https://github.com/wenyu2026/crisp-imputer/actions/workflows/tests.yml)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![NumPy](https://img.shields.io/badge/numpy-%3E%3D1.20-013243.svg)](https://numpy.org/)
 [![Status](https://img.shields.io/badge/manuscript-under%20revision-orange.svg)](#-manuscript-status)
@@ -95,22 +96,25 @@ print(check_compositional_validity(X_filled, comp_idx=[0, 1, 2], total=100.0)["s
 ## 📖 API
 
 ```python
-crisp(X, comp_idx, total=100.0)
+crisp(X, comp_idx, non_comp_idx=None, total=100.0)
 ```
 Global-profile imputation.
-- `X` — `(n, d)` array; structural zeros as `0`, missing as `np.nan`
+- `X` — `(n, d)` array (or DataFrame); structural zeros as `0`, missing as `np.nan`
 - `comp_idx` — column indices that form the composition (columns outside this set pass through untouched)
+- `non_comp_idx` — non-compositional columns, used only for k-NN distance in `lcrisp`
 - `total` — the closure constant (default `100.0`)
 
 ```python
-lcrisp(X, comp_idx, n_neighbors=5, total=100.0)
+lcrisp(X, comp_idx, non_comp_idx=None, n_neighbors=5, total=100.0)
 ```
 Local k-NN profile — the profile is estimated from the nearest complete rows instead of globally.
 
 ```python
-auto_crisp(X, comp_idx, threshold=0.15, total=100.0)
+auto_crisp(X, comp_idx, non_comp_idx=None, total=100.0, threshold=0.15)
 ```
-Picks `crisp` below the missing-rate threshold, `lcrisp` above it.
+Picks `crisp` when the overall missing rate is below `threshold`, `lcrisp` above it.
+
+The same three are available as scikit-learn-style estimators: `CRISPImputer`, `LCRISPImputer`, `AutoCRISPImputer` (each with `fit` / `transform` / `fit_transform`).
 
 ```python
 project_to_simplex(x, total=100.0)
@@ -298,6 +302,30 @@ python make_figures.py         # -> figures/*.pdf
 
 ---
 
+## ✅ Testing
+
+```bash
+pip install pytest
+pytest -q
+```
+
+**56 tests, ~1 s.** `tests/test_crisp.py` pins the invariants the method is advertised on:
+
+| Group | What is checked |
+|---|---|
+| Core invariants | closure of every imputed row; non-negativity; structural zeros preserved exactly; observed entries untouched; single-missing exact recovery; hand-computed multi-missing allocation |
+| API | determinism; function ↔ estimator class agreement; `fit`/`transform` ↔ `fit_transform`; fitted profile reused across calls; DataFrame input; non-compositional columns untouched |
+| Variants | `lcrisp` invariants; `n_neighbors` larger than `n`; `auto_crisp` dispatch below/above threshold; closure under `auto_crisp` |
+| Helpers | `check_compositional_validity` (pass and fail cases); `project_to_simplex` (1-D, 2-D with feature indices, zero row); `compositional_mae` |
+| Edge cases | no-missing identity; single row; fully-missing row; observed part exceeding `total`; custom `total`; entirely-missing column; fallback profile with <3 usable rows |
+| Regression guards | full-observation rows are **not** re-projected (documents the non-zero SumDev); nearly-complete rows do enter the profile; NaN in a non-compositional column becomes a column mean |
+
+The regression guards exist so that behaviour the released benchmarks depend on — including behaviour the manuscript describes differently — cannot drift silently.
+
+CI runs the suite on Python 3.9 / 3.11 / 3.12 via [`.github/workflows/tests.yml`](.github/workflows/tests.yml). The R baselines are not covered by CI (they need `robCompositions` / `zCompositions`) and are run manually.
+
+---
+
 ## 🗂 Repository layout
 
 ```
@@ -306,24 +334,27 @@ crisp-imputer/
 ├── example.py                   # minimal usage example
 ├── app_demo.py                  # interactive demo
 │
-├── benchmark_zeros.py           # structural-zero benchmark + make_missing
+├── benchmark_zeros.py           # structural-zero benchmark, make_missing, data loaders
 ├── final_compare_v3.py          # low-missingness comparison
 ├── final_nd_v3.py               # n<d comparison
 ├── final_real_nd.py             # real-material n<d subsets
 ├── honest_rerun.py              # +closure / +backfill fair-comparison re-run
 ├── summarize_honest.py          # honest tables
-├── benchmark_zeros.py           # data loaders (find_data)
 ├── gen_missing*.py              # missingness generators
 ├── make_figures.py              # figures
 ├── run_r_baseline.R             # impKNNa / missForest baselines
 ├── run_lremplus_baseline.R      # lrEMplus baseline + fair arm
 ├── verify_crisp_theory.py       # theory sanity checks
 │
-├── data/                        # bundled datasets (steel, glass, ge)
+├── tests/test_crisp.py          # 56 unit tests (pytest)
+├── conftest.py                  # makes the repo root importable under pytest
+├── .github/workflows/tests.yml  # CI: pytest on Python 3.9 / 3.11 / 3.12
+│
+├── data/                        # bundled datasets (steel, glass, ge) + provenance
 ├── tmp/  tmp_nd/  tmp_realnd/   # missingness draws (X_true / X_missing committed)
 ├── figures/                     # generated figures
-├── results/                     # metric CSVs
 │
+├── *.csv                        # result tables (see below)
 ├── THEORY.md                    # theory summary
 ├── PROOFS.md                    # statements and derivations
 ├── CONTRIBUTION.md              # positioning vs existing methods
@@ -356,13 +387,22 @@ The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`)
 
 ## ⚠️ Known issues
 
-- [ ] `lcrisp` / `auto_crisp` implemented but not benchmarked
-- [ ] No unit tests (planned: closure guarantee, structural-zero preservation, single-missing exact recovery, golden cases)
-- [ ] `crisp.py` unused `sklearn` import — core is NumPy-only
-- [ ] `ge_nd` needs replacing with a genuinely high-dimensional real compositional dataset
-- [ ] `SoftImpute` baseline should use a reference implementation
-- [ ] R baselines are single-seed (`seed=42`); Python methods use 20 seeds
-- [ ] `lrEMplus` should be integrated as a first-class baseline in the main comparison tables
+**Resolved**
+
+- [x] **Unit tests** — 56 tests covering the closure guarantee, non-negativity, structural-zero preservation, single-missing exact recovery, API behaviour, variants, helpers, edge cases and golden cases → [`tests/`](tests/)
+- [x] **CI** — pytest on Python 3.9 / 3.11 / 3.12 → [`.github/workflows/tests.yml`](.github/workflows/tests.yml)
+- [x] **Self-contained data** — the three external datasets are bundled in `data/`; `find_data()` resolves them locally
+
+**Open**
+
+- [ ] `lcrisp` / `auto_crisp` have invariant tests but are still **not benchmarked** against the baselines
+- [ ] `lrEMplus` should be integrated as a first-class baseline in the main comparison tables (currently a separate script)
+- [ ] `ge_nd` needs replacing with a genuinely high-dimensional real compositional dataset — 21 of its 30 columns are identically zero, so it is not actually `n < d`
+- [ ] The `SoftImpute` baseline should use a reference implementation of Mazumder et al.
+- [ ] R baselines are single-seed (`seed=42`) while Python methods use 20 seeds — extend them to multiple seeds so they can enter the paired tests
+- [ ] `crisp.py` imports `pandas` and `sklearn.neighbors.NearestNeighbors` without using either; the core algorithm is pure NumPy, so both imports could be dropped (and scikit-learn would stop being a hard requirement)
+- [ ] NaN in a **non-compositional** column is silently replaced by that column's mean — `_column_mean_init` fills *every* column. Compositional columns are then overwritten by the allocation, so the benchmarks are unaffected, but it is surprising library behaviour
+- [ ] An entirely-NaN column emits NumPy `RuntimeWarning`s (`Mean of empty slice`, `All-NaN slice encountered`). The output is still correct, but the degenerate case should be handled explicitly
 
 Contributions and corrections are welcome — please open an issue.
 
