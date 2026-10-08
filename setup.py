@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="crisp-imputer",
-    version="1.1.0",
+    version="1.2.0",
     description="CRISP: Compositional Ratio-based Imputation with Simplex Projection",
     author="wenyu2026",
     url="https://github.com/wenyu2026/crisp-imputer",

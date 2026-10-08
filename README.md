@@ -39,6 +39,30 @@ Standard tools handle neither combination well:
 
 ---
 
+## 🆕 What's new in 1.2.0
+
+**`auto_crisp` no longer routes on the missing rate.**
+
+The 1.1 rule (`threshold=0.15`) was effectively a no-op on this benchmark: at an ~8 % missing rate it always picked the global profile, so every `AutoCRISP` row was bit-identical to its `CRISP` row — even on `steel` and `cement`, where the local profile is 1.9–2.4× more accurate.
+
+`strategy="holdout"` is now the default: observed non-zero entries are pseudo-masked, and whichever profile reconstructs **those** better is used for the genuinely missing entries. That is internal cross-validation, so there is no threshold to tune. The legacy rule is still available as `strategy="rate"`.
+
+| wins vs the strongest fair baseline | CRISP alone | `AutoCRISP` 1.1 (rate) | `AutoCRISP` 1.2 (holdout) | oracle |
+|---|---|---|---|---|
+| of 80 configurations | 25 | 25 | **32** | 34 |
+
+Per configuration the new router is better than `CRISP` on **31**, tied on **31**, worse on **15** — median improvement **22.8 %**, largest **58.2 %** (`steel` MNAR 10 %: 0.799 → 0.334).
+
+**The CRISP family's headline win rate does not move** — it stays 34/80. That is structural, not a disappointment: the family metric already takes the best of `{CRISP, LCRISP, AutoCRISP}`, so a better router can at most *tie* the `LCRISP` that was already counted. What improves is `AutoCRISP` as a standalone method.
+
+**And it is not uniformly better.** The holdout selector still picks the local profile on the `synthetic` pool, where the global profile is better, costing **15.6 %** there; and it is slightly worse on a handful of the tiny real high-ratio subsets. That is recorded under [Known issues](#-known-issues) rather than smoothed over.
+
+Two hypotheses for a cheap routing statistic were tested and **rejected** before settling on the holdout rule — a nearest-neighbour distance ratio (`diagnose_routing.py`) and a neighbourhood-support ratio (`diagnose_routing3.py`). The support ratio does not separate the cases at all: `synthetic` 0.80 versus `steel` 0.84 on a 0–1 scale. The evidence is kept in `routing_diagnostic.csv`, `routing_support.csv` and `routing_pseudo.csv`.
+
+> ⚠️ **Breaking change for positional callers.** `threshold` moved from the third parameter to the fourth, because `strategy` now precedes it. `AutoCRISPImputer(comp_idx)` and all keyword calls are unaffected; `auto_crisp(X, idx, None, 0.15)` used to set the threshold and now raises (the third positional is `total`). Use `strategy="rate", threshold=...` explicitly.
+
+---
+
 ## 🆕 What's new in 1.1.0
 
 **Library**
@@ -114,10 +138,10 @@ print(check_compositional_validity(X_filled, comp_idx=[0, 1, 2], total=100.0)["s
 | Variant | Profile | Use when |
 |---|---|---|
 | `crisp` | global (median of normalized complete rows) | default; low missing rate |
-| `lcrisp` | local k-NN profile | higher missing rate, heterogeneous data |
-| `auto_crisp` | switches between the two at a threshold | you don't want to choose |
+| `lcrisp` | local k-NN profile | larger datasets where neighbours are genuinely similar |
+| `auto_crisp` | picks per dataset by pseudo-held-out cross-validation | you don't want to choose |
 
-> ⚠️ Only the **base `crisp` variant is benchmarked** in the current results. `lcrisp` / `auto_crisp` are implemented but remain un-evaluated — see [Known issues](#-known-issues).
+> All three are benchmarked — see [Benchmark results](#-benchmark-results). Note that the **family** (`best of the three`) is the honest unit of comparison: `lcrisp` is the stronger variant on real data.
 
 ---
 
@@ -138,9 +162,16 @@ lcrisp(X, comp_idx, non_comp_idx=None, n_neighbors=5, total=100.0)
 Local k-NN profile — the profile is estimated from the nearest complete rows instead of globally.
 
 ```python
-auto_crisp(X, comp_idx, non_comp_idx=None, total=100.0, threshold=0.15)
+auto_crisp(X, comp_idx, non_comp_idx=None, total=100.0,
+           strategy="holdout", threshold=0.15, n_neighbors=5,
+           holdout_repeats=3, seed=0)
 ```
-Picks `crisp` when the overall missing rate is below `threshold`, `lcrisp` above it.
+
+Picks the global or the local profile per dataset.
+- `strategy="holdout"` (default) — pseudo-mask observed non-zero entries and use whichever profile reconstructs them better. No threshold to tune.
+- `strategy="rate"` — the legacy rule: `crisp` when the overall missing rate is below `threshold`, `lcrisp` above it.
+
+`AutoCRISPImputer` exposes `variant_` (`"crisp"` / `"lcrisp"`) and `selection_` (the pseudo-holdout scores) after `fit_transform`, so a caller can see what was chosen and why.
 
 The same three are available as scikit-learn-style estimators: `CRISPImputer`, `LCRISPImputer`, `AutoCRISPImputer` (each with `fit` / `transform` / `fit_transform`).
 
@@ -250,7 +281,7 @@ MCAR 10 %, 20 seeds:
 Two things to take away:
 
 - **`LCRISP` is consistently better than `CRISP` on the larger real datasets** (steel 2.4×, cement 1.9×) even though the missing rate is low. The global profile is the weaker variant there.
-- **`auto_crisp` never selects it.** The router switches on the missing *rate* (`threshold=0.15`), and at an ~8 % rate it always picks `crisp` — exactly the wrong arm on steel and cement. Every `AutoCRISP` row in the result tables is bit-identical to the `CRISP` row, so "adaptive routing" is a no-op on this benchmark.
+- **`auto_crisp` now selects it** (changed in 1.2.0). The 1.1 router switched on the missing *rate*, so at an ~8 % rate it always picked `crisp` — exactly the wrong arm on steel and cement, and every `AutoCRISP` row was bit-identical to its `CRISP` row. The new default decides by pseudo-held-out cross-validation: `AutoCRISP` alone now wins **32/80** against the strongest fair baseline, up from 25/80. See [What's new in 1.2.0](#-whats-new-in-120) for what it gains and where it still fails.
 
 ### 4. Real high-ratio n<d subsets — new in 1.1.0
 
@@ -350,7 +381,7 @@ We would rather state these than have a reviewer find them.
 
 1. **The accuracy advantage is narrow.** The CRISP family wins 34 of 80 configurations. It is concentrated on synthetic `n < d` at ~10 % missingness (1.3–1.6×) and on `steel` (1.4–2.3×). It does **not** hold on `ge` or `cement`, at 20–30 % missingness, or on the old real `n < d` subsets.
 2. **Real high-dimensional validation is still missing.** The best real high-ratio subsets reach `d/n = 1.75`; the synthetic pools reach 2.4. A genuinely high-dimensional *real* compositional dataset with `n < d` could not be obtained, so the strongest `n < d` claim still rests on synthetic data.
-3. **The router is wrong.** `auto_crisp` switches on the missing rate, so on every low-missingness dataset in the benchmark it reproduces `crisp` exactly — even where `lcrisp` is 1.9–2.4× better. Any "adaptive routing" claim is unsupported by these results.
+3. **The router is better but still imperfect.** `auto_crisp` now decides by pseudo-held-out cross-validation and lifts `AutoCRISP` alone from 25/80 to 32/80 wins, but it still misroutes the `synthetic` pool — picking the local profile where the global one is better, costing 15.6 %. "Adaptive routing" is now supported on most datasets, not all.
 4. **The estimator is simple and not new in kind.** It is a plug-in form of a known conditional mean; the contribution is structural-zero handling plus the constructive guarantee, not a new estimator class.
 5. **The Dirichlet reading is exact only for the mean / geometric-mean profiles.** The default median profile converges to the population median and carries a non-vanishing bias.
 6. **The downstream claim in the draft is not reproduced** — see §9.
@@ -380,6 +411,13 @@ python final_real_nd.py        # -> final_results_real_nd.csv
 python honest_rerun.py         # -> HONEST_results.csv, HONEST_wilcoxon.csv
 python summarize_honest.py     # -> honest_summary.txt
 python softimpute_sensitivity.py   # -> softimpute_sensitivity.csv
+python report_router_change.py # -> router_change.csv (what the new router gains)
+
+# how the auto_crisp routing rule was chosen (and which hypotheses were rejected)
+python diagnose_routing.py     # -> routing_diagnostic.csv  (nearest-neighbour distance ratio)
+python diagnose_routing2.py    # -> routing_pseudo.csv      (pseudo-held-out selector)
+python diagnose_routing3.py    # -> routing_support.csv     (neighbourhood-support ratio — rejected)
+python choose_routing_rule.py  # -> routing_choice.txt      (threshold scan + leave-one-dataset-out)
 
 # R baselines (optional but recommended)
 Rscript run_r_baseline.R impKNNa tmp
@@ -412,7 +450,7 @@ pytest -q
 |---|---|
 | Core invariants | closure of every imputed row; non-negativity; structural zeros preserved exactly; observed entries untouched; single-missing exact recovery; hand-computed multi-missing allocation |
 | API | determinism; function ↔ estimator class agreement; `fit`/`transform` ↔ `fit_transform`; fitted profile reused across calls; DataFrame input; non-compositional columns untouched |
-| Variants | `lcrisp` invariants; `n_neighbors` larger than `n`; `auto_crisp` dispatch below/above threshold; closure under `auto_crisp` |
+| Variants | `lcrisp` invariants; `n_neighbors` larger than `n`; `auto_crisp` under both strategies — the holdout rule picks the local profile when clusters are informative, falls back to the global one when no pseudo task is possible, is deterministic, records its choice, and rejects an unknown strategy; closure under `auto_crisp` |
 | Helpers | `check_compositional_validity` (pass and fail cases); `project_to_simplex` (1-D, 2-D with feature indices, zero row); `compositional_mae` |
 | Edge cases | no-missing identity; single row; fully-missing row; observed part exceeding `total`; custom `total`; entirely-missing column; fallback profile with <3 usable rows |
 | Regression guards | full-observation rows are **not** re-projected (documents the non-zero SumDev); nearly-complete rows do enter the profile; NaN in a non-compositional column becomes a column mean |
@@ -447,6 +485,12 @@ crisp-imputer/
 ├── honest_rerun.py              # +closure / +backfill arms, LCRISP / AutoCRISP, high-ratio subsets
 ├── summarize_honest.py          # honest tables
 ├── softimpute_sensitivity.py    # SoftImpute regularisation sweep vs the 1.0 implementation
+├── report_router_change.py      # what the 1.2.0 auto_crisp routing change actually gains
+├── diagnose_routing.py          # routing signal 1: nearest-neighbour distance ratio
+├── diagnose_routing2.py         # routing signal 2: pseudo-held-out cross-validation
+├── diagnose_routing3.py         # routing signal 3: neighbourhood-support ratio (rejected)
+├── choose_routing_rule.py       # threshold scan + leave-one-dataset-out evaluation
+├── verify_lcrisp_vectorization.py  # proves the vectorised LCRISP matches the loop version
 ├── gen_missing.py               # low-missingness missingness generator
 ├── gen_missing_nd.py            # synthetic n<d generator
 ├── gen_real_nd.py               # real n<d subset generator
@@ -503,7 +547,7 @@ The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`)
 | "SumDev = 0 to machine precision" | **Overstated.** 0.0000 on low-missingness and real subsets; **0.0014–0.0029** on synthetic `n < d`, because complete rows are not re-projected. |
 | "a genuinely high-dimensional real `n < d` dataset (ge_nd)" | **False as stated.** `ge_nd` is `ge` padded with 21 zero columns — effective `d/n = 0.45`. Replaced by the real high-ratio subsets (`d/n = 1.50–1.75`). |
 | "SoftImpute is 3–12× worse than CRISP" | **Baseline was mis-implemented.** The 1.0 `soft_impute` was hard rank truncation; it overstated SoftImpute's error by 1.4–3.6×. The corrected conclusion still holds, but by a smaller margin. |
-| "adaptive routing between global and local profiles" | **Unsupported.** `auto_crisp` routes on the missing rate alone, so it reproduces `crisp` on every low-missingness dataset — even where `lcrisp` is 1.9–2.4× better. |
+| "adaptive routing between global and local profiles" | **Was unsupported; the rule is replaced in 1.2.0.** The draft's router was the missing-rate rule, a bit-identical no-op at low missingness. The replacement (pseudo-held-out cross-validation) lifts `AutoCRISP` alone from 25/80 to 32/80 wins — but the draft's numbers still describe the old rule. |
 
 [`HONEST_CRISP_2026-10-08.md`](HONEST_CRISP_2026-10-08.md) records, claim by claim, what holds, what does not, and what the corrected numbers are. **Prefer that document over the draft's §3 until the revision is published.**
 
@@ -511,7 +555,7 @@ The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`)
 
 ## ⚠️ Known issues
 
-**Resolved in 1.1.0**
+**Resolved (1.1.0 / 1.2.0)**
 
 - [x] **Unit tests** — 89 tests across `tests/test_crisp.py` and `tests/test_baselines.py`
 - [x] **CI** — pytest on Python 3.9 / 3.11 / 3.12
@@ -528,10 +572,11 @@ The manuscript draft in this repository (`paper_draft.md`, `CRISP_PAPER_CN.pdf`)
 - [x] **`lcrisp` vectorised** — the triply nested Python loop is gone: 10.6 s → 0.10 s at n = 1030 (≈110×), with output bit-identical to the old implementation to 1.4e-14 (`verify_lcrisp_vectorization.py`)
 - [x] **`residual_backfill` no longer rescales observed cells** — it broke the exact single-missing recovery for baselines that do not preserve observed values. Verified to change nothing for CRISP/MICE/KNN/mean
 - [x] **Entirely-missing columns guarded** — `KNNImputer`/`SimpleImputer` silently drop them, which misaligned every downstream MAE
+- [x] **`auto_crisp` routing fixed** (1.2.0) — it switched on the missing *rate*, which made it a bit-identical no-op at low missingness. It now decides by pseudo-held-out cross-validation: `AutoCRISP` alone wins **32/80** against the strongest fair baseline, up from 25/80, and beats `CRISP` on 31 configurations by a median of 22.8 %
 
 **Open**
 
-- [ ] **`auto_crisp`'s routing rule is wrong.** It switches on the missing *rate* (`threshold=0.15`), so on every low-missingness dataset in the benchmark it reproduces `crisp` exactly — even where `lcrisp` is 1.9–2.4× better (steel, cement). Every `AutoCRISP` row in `HONEST_results.csv` is bit-identical to its `CRISP` row. The rule should key on the profile's support (usable rows / neighbour availability), not on the missing rate.
+- [ ] **The `AutoCRISP` holdout selector still fails on the synthetic pool.** On all six `synthetic` configurations it picks the local profile where the global one is better, costing 15.6 % of MAE; it is also slightly worse (0.6–3.7 %) on `ge_MCAR_20` and `steel_MNAR_40`. Two cheaper signals — a nearest-neighbour distance ratio and a neighbourhood-support ratio — were tested and **do not** separate the cases (`routing_support.csv`). A better selector, or an explicit "when not to trust the holdout rule" guard, is still needed.
 - [ ] **The real high-ratio subsets reach d/n = 1.50–1.75, not the d/n > 2 of the synthetic pools.** A genuinely high-dimensional *real* compositional dataset with `n < d` could not be obtained, so the strongest `n < d` claim still rests on synthetic data.
 - [ ] **`lcrisp` is still O(n²·d) asymptotically.** The inner loops are vectorised, but it forms an `n × d` distance row per sample. A spatial index (or a capped neighbourhood) would be needed for pools beyond a few thousand rows.
 - [ ] **The manuscript's §3 has not been rewritten.** The numbers in `paper_draft.md` are still v1.0; see the Manuscript status table above for the claim-by-claim gap.

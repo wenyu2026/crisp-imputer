@@ -277,22 +277,89 @@ def test_lcrisp_handles_more_neighbors_than_rows():
     np.testing.assert_allclose(Xp.sum(axis=1), TOTAL, atol=1e-9)
 
 
-def test_auto_crisp_uses_crisp_below_threshold():
+def test_auto_crisp_rate_strategy_uses_crisp_below_threshold():
+    """The legacy missing-rate rule, now opt-in via strategy='rate'."""
     rng = np.random.default_rng(13)
     X = random_composition(rng, n=40, d=6)
     Xm, _ = inject_missing(X, 0.05, rng)
-    a = auto_crisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL, threshold=0.50)
+    a = auto_crisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL,
+                   strategy="rate", threshold=0.50)
     b = crisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL)
     np.testing.assert_allclose(a, b, atol=1e-12)
 
 
-def test_auto_crisp_uses_lcrisp_above_threshold():
+def test_auto_crisp_rate_strategy_uses_lcrisp_above_threshold():
     rng = np.random.default_rng(14)
     X = random_composition(rng, n=40, d=6)
     Xm, _ = inject_missing(X, 0.35, rng)
-    a = auto_crisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL, threshold=0.10)
+    a = auto_crisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL,
+                   strategy="rate", threshold=0.10)
     b = lcrisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL)
     np.testing.assert_allclose(a, b, atol=1e-12)
+
+
+def clustered_composition(rng, n_clusters=4, per_cluster=15, d=6, jitter=1.5):
+    """Distinct clusters with near-identical members, so neighbours are informative."""
+    bases = [rng.dirichlet(np.ones(d) * 0.4) * 100.0 for _ in range(n_clusters)]
+    rows = []
+    for base in bases:
+        for _ in range(per_cluster):
+            v = np.clip(base + rng.normal(0, jitter, size=d), 0.5, None)
+            rows.append(v / v.sum() * 100.0)
+    return np.array(rows)
+
+
+def test_auto_crisp_holdout_prefers_lcrisp_when_neighbours_are_informative():
+    """With clear clusters the local profile reconstructs held-out entries better,
+    and the default (threshold-free) selector must notice."""
+    rng = np.random.default_rng(16)
+    X = clustered_composition(rng, n_clusters=4, per_cluster=15, d=6)
+    Xm, _ = inject_missing(X, 0.20, rng)
+    imp = AutoCRISPImputer(comp_idx=comp_idx_of(6), total=TOTAL)
+    out = imp.fit_transform(Xm)
+    assert imp.variant_ == "lcrisp", imp.selection_
+    assert imp.selection_["mae_local"] < imp.selection_["mae_global"]
+    # and it really is the LCRISP output
+    np.testing.assert_allclose(
+        out, lcrisp(Xm, comp_idx=comp_idx_of(6), total=TOTAL), atol=1e-12)
+
+
+def test_auto_crisp_holdout_falls_back_to_crisp_without_a_pseudo_task():
+    """No row has three observed non-zero entries -> nothing to cross-validate."""
+    rng = np.random.default_rng(17)
+    n, d = 12, 5
+    X = np.zeros((n, d))
+    for i in range(n):
+        cols = rng.choice(d, size=2, replace=False)
+        X[i, cols] = rng.dirichlet(np.ones(2)) * 100.0
+    X[0, 0] = np.nan
+    imp = AutoCRISPImputer(comp_idx=comp_idx_of(d), total=TOTAL)
+    imp.fit_transform(X)
+    assert imp.variant_ == "crisp"
+    assert np.isnan(imp.selection_["mae_global"])
+
+
+def test_auto_crisp_holdout_is_deterministic_and_records_its_choice():
+    rng = np.random.default_rng(18)
+    X = clustered_composition(rng, n_clusters=3, per_cluster=12, d=6)
+    Xm, _ = inject_missing(X, 0.20, rng)
+
+    def run():
+        imp = AutoCRISPImputer(comp_idx=comp_idx_of(6), total=TOTAL, seed=0)
+        out = imp.fit_transform(Xm)
+        return out, imp.variant_, imp.selection_
+
+    a, va, sa = run()
+    b, vb, sb = run()
+    np.testing.assert_array_equal(a, b)
+    assert va == vb
+    assert sa == sb
+    assert sa["strategy"] == "holdout"
+
+
+def test_auto_crisp_rejects_an_unknown_strategy():
+    with pytest.raises(ValueError, match="strategy"):
+        AutoCRISPImputer(comp_idx=[0, 1], strategy="not_a_strategy")
 
 
 def test_auto_crisp_still_guarantees_the_closure():

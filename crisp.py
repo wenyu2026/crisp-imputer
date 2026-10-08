@@ -24,7 +24,7 @@ __all__ = [
     "compositional_mae",
 ]
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 # ============================================================================
@@ -45,6 +45,46 @@ def _quiet_nanmedian(a, axis=0):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         return np.nanmedian(a, axis=axis)
+
+
+def _pseudo_holdout_scores(X, comp_idx, n_neighbors=5, total=100.0, seed=0, repeats=3):
+    """Score the global and local profiles on *pseudo-held-out* observed entries.
+
+    For each row that has at least three observed non-zero composition entries, one of
+    them is masked and both profiles are asked to reconstruct it. The profile that
+    reconstructs the known values better is the one to trust for the genuinely missing
+    entries.
+
+    This is internal cross-validation: the decision comes from the data itself rather
+    than from a tuned threshold. Returns ``(mae_global, mae_local)``, or ``(nan, nan)``
+    when no row qualifies (caller should then keep the global profile).
+    """
+    X = np.asarray(X, dtype=float)
+    n, d = X.shape
+    comp = list(comp_idx)
+    cand = (~np.isnan(X)) & (X > 0)
+    keep = np.zeros(d, dtype=bool)
+    keep[comp] = True
+    cand &= keep[None, :]
+    eligible = np.where(cand.sum(axis=1) >= 3)[0]
+    if eligible.size == 0:
+        return float("nan"), float("nan")
+
+    rng = np.random.default_rng(seed)
+    mask = np.zeros((n, d), dtype=bool)
+    for _ in range(repeats):
+        for i in eligible:
+            cols = np.where(cand[i])[0]
+            mask[i, cols[rng.integers(len(cols))]] = True
+
+    X_pseudo = X.copy()
+    X_pseudo[mask] = np.nan
+    global_pred = crisp(X_pseudo, comp_idx=comp, total=total)
+    local_pred = lcrisp(X_pseudo, comp_idx=comp, n_neighbors=n_neighbors, total=total)
+    with np.errstate(invalid="ignore"):
+        mae_global = float(np.nanmean(np.abs(X[mask] - global_pred[mask])))
+        mae_local = float(np.nanmean(np.abs(X[mask] - local_pred[mask])))
+    return mae_global, mae_local
 
 def project_to_simplex(
     x: np.ndarray,
@@ -411,43 +451,92 @@ class LCRISPImputer(_BaseCRISPImputer):
 # ============================================================================
 
 class AutoCRISPImputer:
-    """AutoCRISP: Automatically select between CRISP and LCRISP based on missing rate.
-    
+    """AutoCRISP: choose between the global (`crisp`) and local (`lcrisp`) profile.
+
+    **Changed in 1.2.0.** The selection used to switch on the *missing rate*
+    (`threshold=0.15`). That rule is a no-op on real data: at an 8 % missing rate it
+    always picks the global profile, even on datasets where the local profile is
+    1.9–2.4× more accurate. It is still available as `strategy="rate"`.
+
+    The default, `strategy="holdout"`, is internal cross-validation: observed entries
+    are pseudo-masked and whichever profile reconstructs them better is used
+    (`_pseudo_holdout_scores`). It needs no threshold, but it is not uniformly better —
+    see the README's benchmark section.
+
+    Attributes
+    ----------
+    variant_ : str
+        ``"crisp"`` or ``"lcrisp"`` — which one the last ``fit_transform`` selected.
+
     Parameters
     ----------
     comp_idx : list of int
         Compositional feature indices.
     non_comp_idx : list of int, optional
         Non-compositional feature indices.
-    threshold : float, default=0.15
-        Missing rate threshold. Below threshold -> CRISP, above -> LCRISP.
-    n_neighbors : int, default=5
-        Number of neighbors for LCRISP (used only if selected).
-    total : float, default=100.0
+    strategy : {"holdout", "rate"}, default "holdout"
+        ``"holdout"`` = pseudo-held-out cross-validation (threshold-free).
+        ``"rate"`` = the legacy missing-rate rule.
+    threshold : float, default 0.15
+        Missing-rate threshold, used only when `strategy="rate"`.
+    n_neighbors : int, default 5
+        Number of neighbors for LCRISP.
+    total : float, default 100.0
         Sum constraint.
+    holdout_repeats : int, default 3
+        Pseudo-mask repetitions per row when `strategy="holdout"`.
+    seed : int, default 0
+        Seed for the pseudo-mask draws (`strategy="holdout"` only).
     """
-    
+
     def __init__(
         self,
         comp_idx: List[int],
         non_comp_idx: Optional[List[int]] = None,
+        strategy: str = "holdout",
         threshold: float = 0.15,
         n_neighbors: int = 5,
         total: float = 100.0,
+        holdout_repeats: int = 3,
+        seed: int = 0,
     ):
+        if strategy not in ("holdout", "rate"):
+            raise ValueError(f"strategy must be 'holdout' or 'rate', got {strategy!r}")
         self.comp_idx = list(comp_idx)
         self.non_comp_idx = list(non_comp_idx) if non_comp_idx else []
+        self.strategy = strategy
         self.threshold = threshold
         self.n_neighbors = n_neighbors
         self.total = total
-    
+        self.holdout_repeats = holdout_repeats
+        self.seed = seed
+        self.variant_ = None
+
     def fit_transform(self, X: np.ndarray) -> np.ndarray:
         X = np.asarray(X, dtype=float)
-        missing_rate = np.isnan(X).sum() / X.size
-        if missing_rate < self.threshold:
-            return crisp(X, comp_idx=self.comp_idx, non_comp_idx=self.non_comp_idx, total=self.total)
+
+        if self.strategy == "rate":
+            missing_rate = np.isnan(X).sum() / X.size
+            choice = "crisp" if missing_rate < self.threshold else "lcrisp"
+            self.selection_ = {"strategy": "rate", "missing_rate": float(missing_rate)}
         else:
-            return lcrisp(X, comp_idx=self.comp_idx, non_comp_idx=self.non_comp_idx, n_neighbors=self.n_neighbors, total=self.total)
+            mae_global, mae_local = _pseudo_holdout_scores(
+                X, self.comp_idx, n_neighbors=self.n_neighbors, total=self.total,
+                seed=self.seed, repeats=self.holdout_repeats)
+            if np.isnan(mae_global) or np.isnan(mae_local):
+                # no row had enough observed entries to build a pseudo task
+                choice = "crisp"
+            else:
+                choice = "crisp" if mae_global <= mae_local else "lcrisp"
+            self.selection_ = {"strategy": "holdout", "mae_global": mae_global,
+                               "mae_local": mae_local}
+
+        self.variant_ = choice
+        if choice == "crisp":
+            return crisp(X, comp_idx=self.comp_idx, non_comp_idx=self.non_comp_idx,
+                         total=self.total)
+        return lcrisp(X, comp_idx=self.comp_idx, non_comp_idx=self.non_comp_idx,
+                      n_neighbors=self.n_neighbors, total=self.total)
 
 
 # ============================================================================
@@ -482,8 +571,20 @@ def auto_crisp(
     comp_idx: List[int],
     non_comp_idx: Optional[List[int]] = None,
     total: float = 100.0,
+    strategy: str = "holdout",
     threshold: float = 0.15,
+    n_neighbors: int = 5,
+    holdout_repeats: int = 3,
+    seed: int = 0,
 ) -> np.ndarray:
-    """AutoCRISP - adaptive switch between CRISP and LCRISP."""
-    imputer = AutoCRISPImputer(comp_idx=comp_idx, non_comp_idx=non_comp_idx, threshold=threshold, total=total)
+    """AutoCRISP — pick the global or local profile per dataset.
+
+    `strategy="holdout"` (default) decides by pseudo-held-out cross-validation on the
+    observed entries; `strategy="rate"` is the legacy missing-rate rule
+    (`threshold`). See `AutoCRISPImputer`.
+    """
+    imputer = AutoCRISPImputer(
+        comp_idx=comp_idx, non_comp_idx=non_comp_idx, strategy=strategy,
+        threshold=threshold, n_neighbors=n_neighbors, total=total,
+        holdout_repeats=holdout_repeats, seed=seed)
     return imputer.fit_transform(X)
