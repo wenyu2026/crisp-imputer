@@ -1,0 +1,34 @@
+method = missForest 
+tmpdir = tmp 
+found 30 folders
+  processing cement_MAR_10 dim 1030 x 7 
+  processing cement_MAR_20 dim 1030 x 7 
+  processing cement_MCAR_10 dim 1030 x 7 
+  processing cement_MCAR_20 dim 1030 x 7 
+  processing cement_MNAR_10 dim 1030 x 7 
+  processing cement_MNAR_20 dim 1030 x 7 
+  processing ge_MAR_10 dim 86 x 9 
+  processing ge_MAR_20 dim 86 x 9 
+  processing ge_MCAR_10 dim 86 x 9 
+  processing ge_MCAR_20 dim 86 x 9 
+  processing ge_MNAR_10 dim 86 x 9 
+  processing ge_MNAR_20 dim 86 x 9 
+  processing glass_MAR_10 dim 40 x 8 
+  processing glass_MAR_20 dim 40 x 8 
+  processing glass_MCAR_10 dim 40 x 8 
+  processing glass_MCAR_20 dim 40 x 8 
+  processing glass_MNAR_10 dim 40 x 8 
+  processing glass_MNAR_20 dim 40 x 8 
+  processing steel_MAR_10 dim 300 x 13 
+  processing steel_MAR_20 dim 300 x 13 
+  processing steel_MCAR_10 dim 300 x 13 
+  processing steel_MCAR_20 dim 300 x 13 
+  processing steel_MNAR_10 dim 300 x 13 
+  processing steel_MNAR_20 dim 300 x 13 
+  processing synthetic_MAR_10 dim 300 x 8 
+  processing synthetic_MAR_20 dim 300 x 8 
+  processing synthetic_MCAR_10 dim 300 x 8 
+  processing synthetic_MCAR_20 dim 300 x 8 
+  processing synthetic_MNAR_10 dim 300 x 8 
+  processing synthetic_MNAR_20 dim 300 x 8 
+done

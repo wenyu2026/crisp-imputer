@@ -1,0 +1,42 @@
+# ===== 中间产物 =====
+# impKNNa / missForest 的逐配置输出体积大（约 2.4 MB）且可由 run_r_baseline.R 重生成，
+# 故不入库；X_true.csv / X_missing.csv 是实验输入，保留以便精确复现。
+**/impKNNa.csv
+**/missForest.csv
+tmp_nd/**/*.tmp
+tmp_realnd/**/*.tmp
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+# ===== 测试 / 覆盖率 =====
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ===== R =====
+.Rhistory
+.RData
+.Rproj.user/
+
+# ===== 运行日志 =====
+*.log
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,304 @@
+﻿
+================================================================================================================
+A. ��ȱʧ�����ݼ� �� MCAR 10%������ Table 1 ��ʵ�棩
+================================================================================================================
+
+[ge|lowmiss]  ʵ��ȱʧ=33.45 ��/���� (4.322% of ����)  ���Ե�ȱʧ��=72.6%  seeds=20
+method             raw  +closure  +backfill
+CRISP            2.435     2.435      2.435
+MICE             1.646     1.645      1.644
+KNN             11.095     9.166      1.731
+mean            11.802     9.478      1.890
+SoftImpute      29.343    16.742      4.566
+SumDev(raw)     0.0000    0.0006     4.2585   �� CRISP / MICE / KNN
+
+[glass|lowmiss]  ʵ��ȱʧ=25.05 ��/���� (7.828% of ����)  ���Ե�ȱʧ��=55.9%  seeds=20
+method             raw  +closure  +backfill
+CRISP            0.073     0.073      0.073
+MICE             0.075     0.073      0.067
+KNN              0.156     0.124      0.062
+mean             0.253     0.193      0.089
+SoftImpute       0.305     0.243      0.109
+SumDev(raw)     0.0000    0.0065     0.0783   �� CRISP / MICE / KNN
+
+[synthetic|lowmiss]  ʵ��ȱʧ=136.3 ��/���� (5.679% of ����)  ���Ե�ȱʧ��=65.6%  seeds=20
+method             raw  +closure  +backfill
+CRISP            4.286     4.286      4.286
+MICE             3.736     3.705      3.704
+KNN             12.365    10.032      4.216
+mean            15.151    12.285      3.910
+SoftImpute      38.361    20.133      6.914
+SumDev(raw)     0.0025    0.0033     4.5438   �� CRISP / MICE / KNN
+
+[steel|lowmiss]  ʵ��ȱʧ=324.75 ��/���� (8.327% of ����)  ���Ե�ȱʧ��=35.4%  seeds=20
+method             raw  +closure  +backfill
+CRISP            1.513     1.513      1.513
+MICE             1.548     1.468      1.462
+KNN              1.947     1.598      1.145
+mean             6.243     4.785      3.138
+SoftImpute       5.879     4.293      2.837
+SumDev(raw)     0.0000    0.0151     1.6462   �� CRISP / MICE / KNN
+
+[cement|lowmiss]  ʵ��ȱʧ=578.1 ��/���� (8.018% of ����)  ���Ե�ȱʧ��=60.0%  seeds=20
+method             raw  +closure  +backfill
+CRISP            1.074     1.074      1.074
+MICE             0.566     0.561      0.560
+KNN              0.779     0.667      0.336
+mean             2.308     1.940      0.818
+SoftImpute       3.450     2.583      1.001
+SumDev(raw)     0.0000    0.0004     0.3468   �� CRISP / MICE / KNN
+
+================================================================================================================
+B. n<d ���ݼ� �� MCAR 10%������ Table 2 ��ʵ�棩
+================================================================================================================
+
+[synA1|nd]  ʵ��ȱʧ=27.6 ��/���� (2.208% of ����)  ���Ե�ȱʧ��=29.7%  seeds=20
+method             raw  +closure  +backfill
+CRISP            3.459     3.459      3.459
+MICE             8.391     7.814      5.471
+KNN              7.965     7.750      5.526
+mean             8.067     7.766      5.434
+SoftImpute      13.120     9.698      6.501
+SumDev(raw)     0.0029    8.5837     7.7878   �� CRISP / MICE / KNN
+
+[synA2|nd]  ʵ��ȱʧ=33.1 ��/���� (2.758% of ����)  ���Ե�ȱʧ��=32.9%  seeds=20
+method             raw  +closure  +backfill
+CRISP            2.969     2.969      2.969
+MICE             6.670     6.206      4.017
+KNN              6.390     6.170      4.110
+mean             6.309     6.049      3.899
+SoftImpute      10.791     7.852      4.989
+SumDev(raw)     0.0026    6.8610     6.0287   �� CRISP / MICE / KNN
+
+[synA3|nd]  ʵ��ȱʧ=21.2 ��/���� (2.65% of ����)  ���Ե�ȱʧ��=33.0%  seeds=20
+method             raw  +closure  +backfill
+CRISP            3.048     3.048      3.048
+MICE             7.738     7.102      4.596
+KNN              6.821     6.634      4.451
+mean             6.763     6.493      4.163
+SoftImpute      11.898     8.794      5.558
+SumDev(raw)     0.0026    7.1206     6.1568   �� CRISP / MICE / KNN
+
+[synA4|nd]  ʵ��ȱʧ=36.35 ��/���� (2.423% of ����)  ���Ե�ȱʧ��=23.8%  seeds=20
+method             raw  +closure  +backfill
+CRISP            3.138     3.138      3.138
+MICE             6.439     5.759      4.275
+KNN              5.695     5.531      4.098
+mean             5.797     5.601      4.115
+SoftImpute       8.744     6.689      4.752
+SumDev(raw)     0.0014    8.3585     7.4018   �� CRISP / MICE / KNN
+
+[ge_nd|nd]  ʵ��ȱʧ=8.35 ��/���� (1.392% of ����)  ���Ե�ȱʧ��=65.9%  seeds=20
+method             raw  +closure  +backfill
+CRISP            4.274     4.274      4.274
+MICE             3.872     3.504      2.200
+KNN              9.044     7.155      1.991
+mean            12.475    10.482      2.742
+SoftImpute      24.775    15.237      4.859
+SumDev(raw)     0.0000    0.9408     3.4854   �� CRISP / MICE / KNN
+
+================================================================================================================
+C. ��ʵ���� n<d �Ӽ������� Finding 3 ��ʵ�棩
+================================================================================================================
+
+[glass|realnd]  ʵ��ȱʧ=3.0 ��/���� (nan% of ����)  ���Ե�ȱʧ��=100.0%  seeds=20
+method             raw  +closure  +backfill
+CRISP            0.000     0.000      0.000
+MICE             0.136     0.092      0.000
+KNN              0.150     0.086      0.000
+mean             0.150     0.086      0.000
+SoftImpute       0.166     0.109      0.000
+SumDev(raw)     0.0000    0.0679     0.0749   �� CRISP / MICE / KNN
+
+[cement|realnd]  ʵ��ȱʧ=2.8 ��/���� (nan% of ����)  ���Ե�ȱʧ��=100.0%  seeds=20
+method             raw  +closure  +backfill
+CRISP            0.000     0.000      0.000
+MICE             1.807     1.381      0.000
+KNN              1.435     1.085      0.000
+mean             1.435     1.085      0.000
+SoftImpute       1.907     1.468      0.000
+SumDev(raw)     0.0000    0.8195     0.6829   �� CRISP / MICE / KNN
+
+[ge|realnd]  ʵ��ȱʧ=1.79 ��/���� (nan% of ����)  ���Ե�ȱʧ��=100.0%  seeds=19
+method             raw  +closure  +backfill
+CRISP            0.000     0.000      0.000
+MICE            10.272     9.044      0.000
+KNN             10.237     8.925      0.000
+mean             9.733     8.394      0.000
+SoftImpute      35.199    17.317      0.000
+SumDev(raw)     0.0000    2.3976     2.2261   �� CRISP / MICE / KNN
+
+[steel|realnd]  ʵ��ȱʧ=10.05 ��/���� (nan% of ����)  ���Ե�ȱʧ��=75.1%  seeds=20
+method             raw  +closure  +backfill
+CRISP            3.695     3.695      3.695
+MICE             5.711     4.846      3.112
+KNN              9.028     7.205      2.869
+mean            10.572     7.836      2.769
+SoftImpute      11.648     9.129      3.489
+SumDev(raw)     0.0000    2.9540     7.4831   �� CRISP / MICE / KNN
+
+================================================================================================================
+D. ���빫ƽ���պ�CRISP ���׻�Ӯ����
+================================================================================================================
+
+CRISP ʤ�ʣ������߱��壻��ĸ = 100 �����ã�:
+                        ʤ   ��      ʤ��
+baseline                             
+KNN(+backfill)         30  64   46.9%
+KNN(+closure)          51  64   79.7%
+KNN(raw)               53  64   82.8%
+MICE(+backfill)        24  64   37.5%
+MICE(+closure)         30  64   46.9%
+MICE(raw)              40  64   62.5%
+SoftImpute(+backfill)  49  64   76.6%
+SoftImpute(+closure)   64  64  100.0%
+SoftImpute(raw)        64  64  100.0%
+mean(+backfill)        30  64   46.9%
+mean(+closure)         58  64   90.6%
+mean(raw)              61  64   95.3%
+
+���ƽ���� +backfill �¡������ʤ����
+  MICE        CRISP Ӯ 24/64   ��λ���Ʊ� 0.92��
+  KNN         CRISP Ӯ 30/64   ��λ���Ʊ� 0.98��
+  mean        CRISP Ӯ 30/64   ��λ���Ʊ� 1.00��
+  SoftImpute  CRISP Ӯ 49/64   ��λ���Ʊ� 1.51��
+
+��������ͳ�ƣ����� = ��ǿ���� +backfill����
+       CRISPʤ   ��  ��λ���Ʊ�
+group                   
+0.1        14  30   0.99
+0.2         1  15   0.87
+0.3         5  15   0.94
+nan         0   4   0.75
+
+CRISP �����ǿ��ƽ���ߵ����ã�
+                              crisp        best_base  best_base_mae  ratio
+key                                                                       
+cement|lowmiss|MAR|0.1       0.9846   KNN(+backfill)         0.3099   0.31
+cement|lowmiss|MAR|0.2       1.6986   KNN(+backfill)         0.6939   0.41
+cement|lowmiss|MCAR|0.1      1.0741   KNN(+backfill)         0.3355   0.31
+cement|lowmiss|MCAR|0.2      1.7944   KNN(+backfill)         0.7343   0.41
+cement|lowmiss|MNAR|0.1      0.5477   KNN(+backfill)         0.1493   0.27
+cement|lowmiss|MNAR|0.2      0.9796   KNN(+backfill)         0.2973   0.30
+cement|realnd|observed|nan   0.0000  MICE(+backfill)         0.0000    NaN
+ge_nd|nd|MAR|0.1             2.7187   KNN(+backfill)         1.0608   0.39
+ge_nd|nd|MAR|0.3            11.2685   KNN(+backfill)         4.6519   0.41
+ge_nd|nd|MCAR|0.1            4.2735   KNN(+backfill)         1.9914   0.47
+ge_nd|nd|MCAR|0.3           12.4936   KNN(+backfill)         5.2192   0.42
+ge_nd|nd|MNAR|0.1            0.9474   KNN(+backfill)         0.1577   0.17
+ge_nd|nd|MNAR|0.3            4.1854  MICE(+backfill)         1.2946   0.31
+ge|lowmiss|MAR|0.1           1.6962   KNN(+backfill)         1.3039   0.77
+ge|lowmiss|MAR|0.2           4.1351  MICE(+backfill)         2.1498   0.52
+ge|lowmiss|MCAR|0.1          2.4353  MICE(+backfill)         1.6442   0.68
+ge|lowmiss|MCAR|0.2          4.3124  MICE(+backfill)         2.4575   0.57
+ge|lowmiss|MNAR|0.2          1.9309  MICE(+backfill)         1.5331   0.79
+ge|realnd|observed|nan       0.0000  MICE(+backfill)         0.0000    NaN
+glass|lowmiss|MAR|0.2        0.1129  MICE(+backfill)         0.0999   0.88
+glass|lowmiss|MCAR|0.1       0.0734   KNN(+backfill)         0.0621   0.85
+glass|lowmiss|MCAR|0.2       0.1291  MICE(+backfill)         0.1121   0.87
+glass|lowmiss|MNAR|0.1       0.0171  MICE(+backfill)         0.0142   0.83
+glass|realnd|observed|nan    0.0000  MICE(+backfill)         0.0000    NaN
+steel|lowmiss|MAR|0.1        1.2694   KNN(+backfill)         1.0038   0.79
+steel|lowmiss|MAR|0.2        2.1885   KNN(+backfill)         1.9783   0.90
+steel|lowmiss|MCAR|0.1       1.5133   KNN(+backfill)         1.1455   0.76
+steel|lowmiss|MCAR|0.2       2.6652   KNN(+backfill)         2.3222   0.87
+steel|lowmiss|MNAR|0.1       0.7991   KNN(+backfill)         0.7745   0.97
+steel|lowmiss|MNAR|0.2       1.5883  MICE(+backfill)         1.5126   0.95
+steel|realnd|observed|nan    3.6946  mean(+backfill)         2.7690   0.75
+synA1|nd|MAR|0.3             6.5913  mean(+backfill)         6.2361   0.95
+synA2|nd|MAR|0.3             7.3663  mean(+backfill)         6.0659   0.82
+synA2|nd|MCAR|0.3            7.7542  mean(+backfill)         6.1670   0.80
+synA2|nd|MNAR|0.3            4.3871  mean(+backfill)         4.1258   0.94
+synA3|nd|MAR|0.3             6.6600  mean(+backfill)         6.4868   0.97
+synA3|nd|MNAR|0.3            4.2831  mean(+backfill)         3.7820   0.88
+synA4|nd|MNAR|0.3            4.1584  mean(+backfill)         3.4179   0.82
+synthetic|lowmiss|MAR|0.1    3.1600  mean(+backfill)         3.1452   1.00
+synthetic|lowmiss|MAR|0.2    6.4553  MICE(+backfill)         5.6483   0.87
+synthetic|lowmiss|MCAR|0.1   4.2857  MICE(+backfill)         3.7045   0.86
+synthetic|lowmiss|MCAR|0.2   8.5354  MICE(+backfill)         6.7486   0.79
+synthetic|lowmiss|MNAR|0.1   2.7056  mean(+backfill)         2.6611   0.98
+synthetic|lowmiss|MNAR|0.2   5.4227  MICE(+backfill)         4.8732   0.90
+
+================================================================================================================
+E. ����ȱʧ�� vs ʵ��ȱʧ�ʣ����Ĵ�δ����ʵ��ֵ��
+================================================================================================================
+                       key  nominal_rate  actual_missing_per_seed  actual_missing_pct  pct_missing_from_single_rows  seeds_used
+    cement|lowmiss|MAR|0.1           0.1                   561.90               7.793                          61.7          20
+    cement|lowmiss|MAR|0.2           0.2                  1114.70              15.460                          36.5          20
+   cement|lowmiss|MCAR|0.1           0.1                   578.10               8.018                          60.0          20
+   cement|lowmiss|MCAR|0.2           0.2                  1155.50              16.026                          34.5          20
+   cement|lowmiss|MNAR|0.1           0.1                   284.00               3.939                          77.9          20
+   cement|lowmiss|MNAR|0.2           0.2                   575.40               7.981                          60.6          20
+cement|realnd|observed|nan           NaN                     2.80                 NaN                         100.0          20
+          ge_nd|nd|MAR|0.1           0.1                     6.65               1.108                          82.0          20
+          ge_nd|nd|MAR|0.3           0.3                    20.75               3.458                          37.6          20
+         ge_nd|nd|MCAR|0.1           0.1                     8.35               1.392                          65.9          20
+         ge_nd|nd|MCAR|0.3           0.3                    24.80               4.133                          31.5          20
+         ge_nd|nd|MNAR|0.1           0.1                     3.42               0.570                          93.8          19
+         ge_nd|nd|MNAR|0.3           0.3                     9.95               1.658                          68.3          20
+        ge|lowmiss|MAR|0.1           0.1                    28.85               3.727                          78.5          20
+        ge|lowmiss|MAR|0.2           0.2                    59.55               7.694                          55.5          20
+       ge|lowmiss|MCAR|0.1           0.1                    33.45               4.322                          72.6          20
+       ge|lowmiss|MCAR|0.2           0.2                    69.55               8.986                          50.6          20
+       ge|lowmiss|MNAR|0.1           0.1                    17.95               2.319                          88.9          20
+       ge|lowmiss|MNAR|0.2           0.2                    36.10               4.664                          70.4          20
+    ge|realnd|observed|nan           NaN                     1.79                 NaN                         100.0          19
+     glass|lowmiss|MAR|0.1           0.1                    25.10               7.844                          57.2          20
+     glass|lowmiss|MAR|0.2           0.2                    49.95              15.609                          29.4          20
+    glass|lowmiss|MCAR|0.1           0.1                    25.05               7.828                          55.9          20
+    glass|lowmiss|MCAR|0.2           0.2                    50.00              15.625                          30.6          20
+    glass|lowmiss|MNAR|0.1           0.1                     8.10               2.531                          88.9          20
+    glass|lowmiss|MNAR|0.2           0.2                    16.30               5.094                          72.1          20
+ glass|realnd|observed|nan           NaN                     3.00                 NaN                         100.0          20
+     steel|lowmiss|MAR|0.1           0.1                   308.55               7.912                          38.1          20
+     steel|lowmiss|MAR|0.2           0.2                   610.70              15.659                          13.0          20
+    steel|lowmiss|MCAR|0.1           0.1                   324.75               8.327                          35.4          20
+    steel|lowmiss|MCAR|0.2           0.2                   644.55              16.527                          11.0          20
+    steel|lowmiss|MNAR|0.1           0.1                   275.35               7.060                          42.7          20
+    steel|lowmiss|MNAR|0.2           0.2                   547.95              14.050                          16.4          20
+ steel|realnd|observed|nan           NaN                    10.05                 NaN                          75.1          20
+          synA1|nd|MAR|0.1           0.1                    26.90               2.152                          34.8          20
+          synA1|nd|MAR|0.3           0.3                    80.75               6.460                           3.7          20
+         synA1|nd|MCAR|0.1           0.1                    27.60               2.208                          29.7          20
+         synA1|nd|MCAR|0.3           0.3                    86.45               6.916                           2.6          20
+         synA1|nd|MNAR|0.1           0.1                    18.55               1.484                          50.4          20
+         synA1|nd|MNAR|0.3           0.3                    54.45               4.356                          10.8          20
+          synA2|nd|MAR|0.1           0.1                    32.25               2.688                          36.1          20
+          synA2|nd|MAR|0.3           0.3                    95.90               7.992                           3.4          20
+         synA2|nd|MCAR|0.1           0.1                    33.10               2.758                          32.9          20
+         synA2|nd|MCAR|0.3           0.3                   101.75               8.479                           2.9          20
+         synA2|nd|MNAR|0.1           0.1                    23.70               1.975                          46.4          20
+         synA2|nd|MNAR|0.3           0.3                    69.25               5.771                           9.1          20
+          synA3|nd|MAR|0.1           0.1                    21.35               2.669                          34.0          20
+          synA3|nd|MAR|0.3           0.3                    63.90               7.987                           4.0          20
+         synA3|nd|MCAR|0.1           0.1                    21.20               2.650                          33.0          20
+         synA3|nd|MCAR|0.3           0.3                    68.35               8.544                           2.8          20
+         synA3|nd|MNAR|0.1           0.1                    13.65               1.706                          49.8          20
+         synA3|nd|MNAR|0.3           0.3                    41.20               5.150                          13.5          20
+          synA4|nd|MAR|0.1           0.1                    35.00               2.333                          24.3          20
+          synA4|nd|MAR|0.3           0.3                   103.50               6.900                           1.6          20
+         synA4|nd|MCAR|0.1           0.1                    36.35               2.423                          23.8          20
+         synA4|nd|MCAR|0.3           0.3                   107.95               7.197                           1.3          20
+         synA4|nd|MNAR|0.1           0.1                    23.05               1.537                          39.0          20
+         synA4|nd|MNAR|0.3           0.3                    70.20               4.680                           6.0          20
+ synthetic|lowmiss|MAR|0.1           0.1                   119.95               4.998                          70.0          20
+ synthetic|lowmiss|MAR|0.2           0.2                   241.15              10.048                          48.1          20
+synthetic|lowmiss|MCAR|0.1           0.1                   136.30               5.679                          65.6          20
+synthetic|lowmiss|MCAR|0.2           0.2                   276.70              11.529                          42.0          20
+synthetic|lowmiss|MNAR|0.1           0.1                   108.35               4.515                          71.5          20
+synthetic|lowmiss|MNAR|0.2           0.2                   220.35               9.181                          51.4          20
+
+================================================================================================================
+F. lrEMplus ���ߣ��ٷ� zCompositions �ġ���+ȱʧ��������
+================================================================================================================
+�ܼ� 140 �����ã��ɹ� 3��ʧ�� 137
+
+ʧ��ԭ��ֲ���
+   109  ERR: The lrEMplus algorithm works on regular data sets (no. rows > no. columns). You can consider lrSVD for wide data sets.
+    27  ERR: lrEM based on alr requires at least one complete column
+     1  no_missing
+
+����ͨ�����ã�
+  tmp/glass_MCAR_10          n_miss=24  MAE raw=1.1964    +backfill=0.3998    | CRISP=0.0734  �� ���� 5.4��
+  tmp/glass_MCAR_20          n_miss=63  MAE raw=880.2221  +backfill=2.2825    | CRISP=0.1291  �� ���� 17.7��
+  tmp/glass_MNAR_10          n_miss=6   MAE raw=0.2361    +backfill=0.0815    | CRISP=0.0171  �� ���� 4.8��

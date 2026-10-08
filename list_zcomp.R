@@ -1,0 +1,7 @@
+.libPaths("C:/Users/wenyu/Documents/R/win-library/4.6")
+suppressMessages(library(zCompositions))
+cat("loaded:", "zCompositions" %in% loadedNamespaces(), "\n")
+f <- ls("package:zCompositions")
+cat("total functions:", length(f), "\n")
+cat(f, sep = " | ")
+cat("\n")

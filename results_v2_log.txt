@@ -1,0 +1,22 @@
+=== synthetic (结构零 42%) ===
+=== steel (结构零 17%) ===
+=== glass (结构零 21%) ===
+=== ge (结构零 55%) ===
+=== cement (结构零 20%) ===
+
+完整表已保存 D:\09-项目\ceshi\项目二\crisp-imputer\final_results_v2.csv (180 行)
+
+=== 关键行（MCAR 10%，CRISP 5 种子均值±std）===
+  dataset  mae_mean  mae_std
+synthetic    4.1783   1.0209
+    steel    1.4858   0.3217
+    glass    0.0731   0.0382
+       ge    1.9079   1.3289
+   cement    1.0480   0.1132
+
+=== CRISP vs 基线优势（MCAR 10%，均值）===
+synthetic  CRISP 4.178±1.021 vs impKNNa 12.549 -> 3.0x
+steel      CRISP 1.486±0.322 vs impKNNa 1.759 -> 1.2x
+glass      CRISP 0.073±0.038 vs impKNNa 0.198 -> 2.7x
+ge         CRISP 1.908±1.329 vs impKNNa 10.860 -> 5.7x
+cement     CRISP 1.048±0.113 vs impKNNa 0.586 -> 0.6x

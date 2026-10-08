@@ -1,0 +1,34 @@
+method = missForest 
+tmpdir = tmp_nd 
+found 30 folders
+  processing ge_nd_MAR_10 dim 20 x 30 
+  processing ge_nd_MAR_30 dim 20 x 30 
+  processing ge_nd_MCAR_10 dim 20 x 30 
+  processing ge_nd_MCAR_30 dim 20 x 30 
+  processing ge_nd_MNAR_10 dim 20 x 30 
+  processing ge_nd_MNAR_30 dim 20 x 30 
+  processing synA1_MAR_10 dim 25 x 50 
+  processing synA1_MAR_30 dim 25 x 50 
+  processing synA1_MCAR_10 dim 25 x 50 
+  processing synA1_MCAR_30 dim 25 x 50 
+  processing synA1_MNAR_10 dim 25 x 50 
+  processing synA1_MNAR_30 dim 25 x 50 
+  processing synA2_MAR_10 dim 30 x 40 
+  processing synA2_MAR_30 dim 30 x 40 
+  processing synA2_MCAR_10 dim 30 x 40 
+  processing synA2_MCAR_30 dim 30 x 40 
+  processing synA2_MNAR_10 dim 30 x 40 
+  processing synA2_MNAR_30 dim 30 x 40 
+  processing synA3_MAR_10 dim 20 x 40 
+  processing synA3_MAR_30 dim 20 x 40 
+  processing synA3_MCAR_10 dim 20 x 40 
+  processing synA3_MCAR_30 dim 20 x 40 
+  processing synA3_MNAR_10 dim 20 x 40 
+  processing synA3_MNAR_30 dim 20 x 40 
+  processing synA4_MAR_10 dim 25 x 60 
+  processing synA4_MAR_30 dim 25 x 60 
+  processing synA4_MCAR_10 dim 25 x 60 
+  processing synA4_MCAR_30 dim 25 x 60 
+  processing synA4_MNAR_10 dim 25 x 60 
+  processing synA4_MNAR_30 dim 25 x 60 
+done

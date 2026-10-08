@@ -1,0 +1,11 @@
+.libPaths("C:/Users/wenyu/Documents/R/win-library/4.6")
+suppressMessages(library(zCompositions))
+suppressMessages(library(missForest))
+cat("lrEM 参数:\n")
+print(args(lrEM))
+X <- as.matrix(read.csv("tmp/ge_MCAR_10/X_missing.csv"))
+cat("\n--- missForest ---\n")
+r <- tryCatch(missForest(X, maxiter = 10, ntree = 100, verbose = FALSE),
+              error = function(e) paste("ERR:", conditionMessage(e)))
+if (is.list(r)) cat("missForest OK dim", dim(r$ximp), " OOB", round(r$OOBerror, 4), "\n")
+else cat("missForest:", r, "\n")

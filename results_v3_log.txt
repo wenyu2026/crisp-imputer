@@ -1,0 +1,23 @@
+=== synthetic (结构零 42%) ===
+=== steel (结构零 17%) ===
+=== glass (结构零 21%) ===
+=== ge (结构零 55%) ===
+=== cement (结构零 20%) ===
+
+=== MCAR 10%（20 种子 mean±std）===
+method     CRISP   MICE  SoftImpute  impKNNa
+dataset                                     
+cement     1.074  0.566       3.450    0.586
+ge         2.435  1.646      29.343   10.860
+glass      0.073  0.075       0.305    0.198
+steel      1.513  1.548       5.879    1.759
+synthetic  4.286  3.736      38.361   12.549
+
+=== Wilcoxon CRISP vs MICE / SoftImpute（20 种子，MCAR 10%）===
+test       CRISP vs MICE  CRISP vs SoftImpute
+dataset                                      
+cement            0.0000                  0.0
+ge                0.1054                  0.0
+glass             0.5958                  0.0
+steel             0.3683                  0.0
+synthetic         0.0094                  0.0

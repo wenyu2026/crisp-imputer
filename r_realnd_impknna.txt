@@ -1,0 +1,24 @@
+method = impKNNa 
+tmpdir = tmp_realnd 
+found 20 folders
+  processing cement_s0 dim 6 x 7 
+  processing cement_s1 dim 6 x 7 
+  processing cement_s2 dim 6 x 7 
+  processing cement_s3 dim 6 x 7 
+  processing cement_s4 dim 6 x 7 
+  processing ge_s0 dim 8 x 9 
+  processing ge_s1 dim 8 x 9 
+  processing ge_s2 dim 8 x 9 
+  processing ge_s3 dim 8 x 9 
+  processing ge_s4 dim 8 x 9 
+  processing glass_s0 dim 6 x 8 
+  processing glass_s1 dim 6 x 8 
+  processing glass_s2 dim 6 x 8 
+  processing glass_s3 dim 6 x 8 
+  processing glass_s4 dim 6 x 8 
+  processing steel_s0 dim 10 x 13 
+  processing steel_s1 dim 10 x 13 
+  processing steel_s2 dim 10 x 13 
+  processing steel_s3 dim 10 x 13 
+  processing steel_s4 dim 10 x 13 
+done
